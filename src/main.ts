@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, ask } from "@tauri-apps/plugin-dialog";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -273,6 +275,26 @@ listen<string>("open-file", (e) => {
 invoke<string | null>("get_initial_file").then((path) => {
   if (path) openPath(path);
 });
+
+// ===== 自动更新：仅主窗口启动时静默检查一次，发现新版征询后下载安装并重启 =====
+async function checkForUpdate() {
+  if (getCurrentWindow().label !== "main") return; // 避免每个文档窗口都查一遍
+  try {
+    const update = await check();
+    if (!update) return; // 已是最新
+    const yes = await ask(
+      `发现新版本 ${update.version}${update.body ? `\n\n${update.body}` : ""}\n\n现在更新吗？`,
+      { title: "73·素 有更新", kind: "info", okLabel: "更新并重启", cancelLabel: "稍后" },
+    );
+    if (!yes) return;
+    await update.downloadAndInstall();
+    await relaunch();
+  } catch (err) {
+    // 无网络 / 尚无发布 / 开发环境无更新端点等都会落到这里，静默忽略即可
+    console.warn("更新检查失败：", err);
+  }
+}
+checkForUpdate();
 
 // 拖拽文件到窗口
 getCurrentWebview().onDragDropEvent((event) => {
