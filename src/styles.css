@@ -1,0 +1,603 @@
+/* 内嵌马善政毛笔字体子集（仅数字 / 中点 / 素），保证任何机器上品牌字标都是毛笔体 */
+@font-face {
+  font-family: "Ma Shan Zheng";
+  src: url("./assets/MaShanZheng-subset.woff2") format("woff2");
+  font-display: swap;
+}
+
+:root {
+  font-family: -apple-system, system-ui, "Helvetica Neue", sans-serif;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 滚动条：细、半透明、圆角 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.4);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* hidden 属性必须能盖过下面 .empty / .drop-overlay 的 display:flex */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #fff;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* 文档本身不滚动，只让正文区滚动，这样滚动条样式才能生效 */
+}
+
+/* 顶部工具栏 */
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e1e4e8;
+  background: #f6f8fa;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.toolbar button {
+  font-size: 13px;
+  padding: 6px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.toolbar button:hover {
+  background: #f3f4f6;
+}
+
+.filename {
+  font-size: 13px;
+  color: #57606a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 自定义标题栏：居中标题，整条可拖拽 */
+#titlebar {
+  position: relative;
+  flex: 0 0 auto;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 80px; /* 左右留出红绿灯按钮的位置 */
+  border-bottom: 1px solid #e8eaed;
+  background: #f6f8fa;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 深色切换按钮（标题栏右侧，不影响标题居中） */
+#theme-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #57606a;
+  cursor: pointer;
+}
+
+#theme-toggle:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+#title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #57606a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none; /* 文字不拦截拖拽 */
+}
+
+/* 空状态：品牌占位页 */
+.empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.brand-mark {
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.08));
+}
+
+.brand-name {
+  margin: 22px 0 0;
+  font-family: "Ma Shan Zheng", serif;
+  font-size: 40px;
+  color: #1b1a18;
+  letter-spacing: 2px;
+}
+
+.brand-dot {
+  color: #b23a2e;
+}
+
+.brand-tag {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #b0aaa0;
+  letter-spacing: 3px;
+}
+
+/* 预览区 */
+.markdown-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 40px 56px 80px;
+  width: 100%;
+}
+
+/* frontmatter 元信息卡片：小字号、弱化、与正文分开 */
+.markdown-body .frontmatter {
+  margin: 0 0 28px;
+  padding: 12px 16px;
+  border: 1px solid #eaecef;
+  border-radius: 8px;
+  background: #f6f8fa;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.markdown-body .meta-row {
+  display: flex;
+  gap: 10px;
+}
+
+.markdown-body .meta-key {
+  flex: 0 0 auto;
+  min-width: 56px;
+  color: #9aa1a9;
+}
+
+.markdown-body .meta-val {
+  color: #6e7681;
+  word-break: break-word;
+}
+
+html[data-theme="dark"] .markdown-body .frontmatter {
+  border-color: #21262d;
+  background: #161b22;
+}
+html[data-theme="dark"] .markdown-body .meta-key {
+  color: #6e7681;
+}
+html[data-theme="dark"] .markdown-body .meta-val {
+  color: #8b949e;
+}
+
+/* 阅读排版：拉开行距 / 段距，正文深灰、加粗纯黑形成对比，列表更松弛 */
+.markdown-body.markdown-body {
+  font-size: 14px;
+  line-height: 1.85;
+  color: #353b41;
+}
+
+.markdown-body.markdown-body p {
+  margin-bottom: 18px;
+}
+
+.markdown-body.markdown-body strong {
+  font-weight: 700;
+  color: #111418;
+}
+
+.markdown-body.markdown-body ul,
+.markdown-body.markdown-body ol {
+  margin-bottom: 18px;
+  padding-left: 1.7em;
+}
+
+.markdown-body.markdown-body li {
+  margin: 7px 0;
+  line-height: 1.85;
+}
+
+.markdown-body.markdown-body li::marker {
+  color: #0969da;
+}
+
+/* 标题与上文多留点呼吸空间 */
+.markdown-body.markdown-body h1,
+.markdown-body.markdown-body h2,
+.markdown-body.markdown-body h3 {
+  margin-top: 32px;
+}
+
+/* 标题大小：比正文层级清晰，但不突兀 */
+.markdown-body.markdown-body h1 {
+  font-size: 1.5em;
+}
+
+.markdown-body.markdown-body h2 {
+  font-size: 1.28em;
+}
+
+.markdown-body.markdown-body h3 {
+  font-size: 1.12em;
+}
+
+.markdown-body.markdown-body h4 {
+  font-size: 1em;
+}
+
+.markdown-body.markdown-body h5 {
+  font-size: 0.9em;
+}
+
+.markdown-body.markdown-body h6 {
+  font-size: 0.85em;
+}
+
+/* 代码块：圆角 + 缩进按 4 个空格 + 复制按钮 */
+.markdown-body pre {
+  position: relative;
+  border: 1px solid #e1e4e8;
+  border-radius: 8px;
+}
+
+.markdown-body pre,
+.markdown-body pre code {
+  -moz-tab-size: 4;
+  tab-size: 4;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  color: #57606a;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.markdown-body pre:hover .copy-btn {
+  opacity: 1;
+}
+
+.copy-btn:hover {
+  background: #f3f4f6;
+  color: #24292f;
+}
+
+.copy-btn.copied {
+  color: #1a7f37;
+  border-color: #1a7f37;
+  opacity: 1;
+}
+
+/* 表格：自适应内容区宽度，铺满可用空间并自动换行 */
+.markdown-body table {
+  display: table;
+  width: 100%;
+  table-layout: auto;
+  border-collapse: collapse;
+}
+
+.markdown-body th,
+.markdown-body td {
+  vertical-align: middle;
+  word-break: keep-all; /* 中文整词不逐字换行 */
+  overflow-wrap: anywhere; /* 超长英文/代码 token 才强制断行 */
+}
+
+.markdown-body table th {
+  white-space: nowrap;
+}
+
+/* 表格区块：上方折行开关条 + 可横向滚动的表格容器 */
+.table-block {
+  margin-bottom: 16px;
+}
+
+.table-bar {
+  display: flex;
+  justify-content: flex-end;
+  height: 24px;
+  margin-bottom: 4px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table-wrap table {
+  margin-bottom: 0;
+}
+
+/* 不折行模式：单元格单行显示，表格按内容撑开，容器横向滚动 */
+.table-wrap.nowrap table {
+  width: auto;
+}
+
+.table-wrap.nowrap th,
+.table-wrap.nowrap td {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.table-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  color: #57606a;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.table-block:hover .table-toggle {
+  opacity: 1;
+}
+
+.table-toggle:hover {
+  background: #f3f4f6;
+  color: #24292f;
+}
+
+.table-toggle.active {
+  color: #0969da;
+  border-color: #0969da;
+  background: #ddf4ff;
+  opacity: 1;
+}
+
+/* 图片：圆角边框 + 可点击放大 */
+.markdown-body img {
+  border-radius: 8px;
+  border: 1px solid #e1e4e8;
+}
+
+.markdown-body img.zoomable {
+  cursor: zoom-in;
+}
+
+/* 图片放大预览层 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  cursor: zoom-out;
+}
+
+.lightbox img {
+  max-width: 92%;
+  max-height: 92%;
+  border-radius: 6px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* 拖拽覆盖层 */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(240, 245, 252, 0.94);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  z-index: 50;
+}
+
+.drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 36px 52px;
+  border: 2px dashed #0969da;
+  border-radius: 16px;
+  background: #fff;
+  color: #0969da;
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 12px 32px rgba(9, 105, 218, 0.18);
+}
+
+/* ===================== 深色模式 ===================== */
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="dark"],
+html[data-theme="dark"] body {
+  background: #0d1117;
+}
+
+html[data-theme="dark"] .markdown-body {
+  background: #0d1117;
+}
+
+/* 标题栏 */
+html[data-theme="dark"] #titlebar {
+  background: #161b22;
+  border-bottom-color: #21262d;
+}
+html[data-theme="dark"] #title {
+  color: #8b949e;
+}
+html[data-theme="dark"] #theme-toggle {
+  color: #8b949e;
+}
+html[data-theme="dark"] #theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 阅读排版：正文浅灰、加粗近白、列表标记亮蓝 */
+html[data-theme="dark"] .markdown-body.markdown-body {
+  color: #c9d1d9;
+}
+html[data-theme="dark"] .markdown-body.markdown-body strong {
+  color: #f0f6fc;
+}
+html[data-theme="dark"] .markdown-body.markdown-body li::marker {
+  color: #58a6ff;
+}
+
+/* 代码块 + highlight.js 暗色配色 */
+html[data-theme="dark"] .markdown-body pre {
+  border-color: #30363d;
+}
+html[data-theme="dark"] .hljs {
+  color: #c9d1d9;
+  background: transparent;
+}
+html[data-theme="dark"] .hljs-comment,
+html[data-theme="dark"] .hljs-quote {
+  color: #8b949e;
+}
+html[data-theme="dark"] .hljs-keyword,
+html[data-theme="dark"] .hljs-selector-tag,
+html[data-theme="dark"] .hljs-literal,
+html[data-theme="dark"] .hljs-doctag,
+html[data-theme="dark"] .hljs-section,
+html[data-theme="dark"] .hljs-name {
+  color: #ff7b72;
+}
+html[data-theme="dark"] .hljs-string,
+html[data-theme="dark"] .hljs-attr,
+html[data-theme="dark"] .hljs-meta .hljs-string {
+  color: #a5d6ff;
+}
+html[data-theme="dark"] .hljs-number,
+html[data-theme="dark"] .hljs-symbol,
+html[data-theme="dark"] .hljs-bullet,
+html[data-theme="dark"] .hljs-built_in,
+html[data-theme="dark"] .hljs-type {
+  color: #79c0ff;
+}
+html[data-theme="dark"] .hljs-title,
+html[data-theme="dark"] .hljs-function .hljs-title,
+html[data-theme="dark"] .hljs-variable,
+html[data-theme="dark"] .hljs-template-variable {
+  color: #d2a8ff;
+}
+
+/* 复制 / 折行按钮 */
+html[data-theme="dark"] .copy-btn,
+html[data-theme="dark"] .table-toggle {
+  background: #21262d;
+  border-color: #30363d;
+  color: #8b949e;
+}
+html[data-theme="dark"] .copy-btn:hover,
+html[data-theme="dark"] .table-toggle:hover {
+  background: #30363d;
+  color: #c9d1d9;
+}
+html[data-theme="dark"] .copy-btn.copied {
+  color: #3fb950;
+  border-color: #3fb950;
+}
+html[data-theme="dark"] .table-toggle.active {
+  color: #58a6ff;
+  border-color: #1f6feb;
+  background: #122a4d;
+}
+
+/* 图片描边 */
+html[data-theme="dark"] .markdown-body img {
+  border-color: #30363d;
+}
+
+/* 滚动条 */
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+/* 品牌占位页 */
+html[data-theme="dark"] .brand-name {
+  color: #e6e1d6;
+}
+html[data-theme="dark"] .brand-tag {
+  color: #6e7681;
+}
+
+/* 拖拽覆盖层 */
+html[data-theme="dark"] .drop-overlay {
+  background: rgba(13, 17, 23, 0.92);
+}
+html[data-theme="dark"] .drop-card {
+  background: #161b22;
+}

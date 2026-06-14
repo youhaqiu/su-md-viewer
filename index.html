@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>73·素</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <!-- 自定义标题栏（居中标题，可拖拽移动窗口） -->
+    <header id="titlebar" data-tauri-drag-region>
+      <span id="title">73·素</span>
+      <button id="theme-toggle" type="button" title="切换深色"></button>
+    </header>
+
+    <!-- 未打开文件时：品牌占位页 -->
+    <div id="empty" class="empty">
+      <svg class="brand-mark" width="104" height="104" viewBox="0 0 112 112" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="112" height="112" rx="28" fill="#FAF7F0" stroke="#E7E1D4" stroke-width="1.5"/>
+        <text x="53" y="80" text-anchor="middle" font-family="Ma Shan Zheng" font-size="62" fill="#1E1B17">73</text>
+        <circle cx="86" cy="76" r="6" fill="#B23A2E"/>
+      </svg>
+      <p class="brand-name">73<span class="brand-dot">·</span>素</p>
+      <p class="brand-tag">素净的 Markdown 阅读器</p>
+    </div>
+
+    <!-- 渲染结果 -->
+    <article id="preview" class="markdown-body" hidden></article>
+
+    <!-- 拖拽时的覆盖层 -->
+    <div id="drop-overlay" class="drop-overlay" hidden>
+      <div class="drop-card">
+        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <path d="M12 3v12" />
+          <path d="M7 10l5 5 5-5" />
+        </svg>
+        <span>松手打开 Markdown 文件</span>
+      </div>
+    </div>
+  </body>
+</html>
