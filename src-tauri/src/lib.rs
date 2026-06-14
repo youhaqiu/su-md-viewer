@@ -4,7 +4,9 @@ use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-use tauri::{Emitter, Manager, State, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+#[cfg(target_os = "macos")]
+use tauri::TitleBarStyle;
 
 // 应用级状态：待打开文件的路由信息。
 #[derive(Default)]
@@ -151,12 +153,15 @@ fn open_path_in_window(app: &tauri::AppHandle, path: String) {
             .lock()
             .unwrap()
             .insert(label.clone(), path);
-        let _ = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+        let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
             .title("73·素")
-            .inner_size(900.0, 720.0)
+            .inner_size(900.0, 720.0);
+        // 标题栏覆盖样式 + 隐藏原生标题为 macOS 专有 API（其他平台用默认标题栏）
+        #[cfg(target_os = "macos")]
+        let builder = builder
             .title_bar_style(TitleBarStyle::Overlay)
-            .hidden_title(true)
-            .build();
+            .hidden_title(true);
+        let _ = builder.build();
     }
 }
 
@@ -212,15 +217,17 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            // macOS：双击 .md / 用本应用打开文件时，系统会发来 Opened 事件
-            if let tauri::RunEvent::Opened { urls } = event {
+        .run(|_app, _event| {
+            // macOS：双击 .md / 用本应用打开文件时，系统会发来 Opened 事件。
+            // Opened 变体仅在 macOS 存在，Windows/Linux 走单实例插件的 argv 路径。
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = _event {
                 for path in urls
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
                     .map(|p| p.to_string_lossy().to_string())
                 {
-                    open_path_in_window(app, path);
+                    open_path_in_window(_app, path);
                 }
             }
         });
