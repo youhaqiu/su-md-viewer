@@ -11,6 +11,13 @@ import { markedHighlight } from "marked-highlight";
 import markedKatex from "marked-katex-extension";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
+import {
+  t as i18n,
+  getLocale,
+  setLocale,
+  refreshLocale,
+  LANG_STORAGE_KEY,
+} from "./i18n";
 
 import "highlight.js/styles/github.css";
 import "github-markdown-css/github-markdown.css";
@@ -54,7 +61,7 @@ function applyTheme() {
   root.setAttribute("data-light-theme", "light");
   root.setAttribute("data-dark-theme", "dark");
   themeBtn.innerHTML = t === "dark" ? SUN_ICON : MOON_ICON; // 显示「点击后会切到」的图标
-  themeBtn.title = t === "dark" ? "切换浅色" : "切换深色";
+  themeBtn.title = t === "dark" ? i18n("theme.toLight") : i18n("theme.toDark");
 }
 
 themeBtn.addEventListener("click", () => {
@@ -73,6 +80,45 @@ const titleEl = document.querySelector<HTMLSpanElement>("#title")!;
 const emptyEl = document.querySelector<HTMLDivElement>("#empty")!;
 const previewEl = document.querySelector<HTMLElement>("#preview")!;
 const overlayEl = document.querySelector<HTMLDivElement>("#drop-overlay")!;
+const langBtn = document.querySelector<HTMLButtonElement>("#lang-toggle")!;
+const brandTagEl = document.querySelector<HTMLParagraphElement>("#brand-tag")!;
+const dropHintEl = document.querySelector<HTMLSpanElement>("#drop-hint")!;
+
+// 记住当前已打开的文档，切换语言时重渲染以刷新动态文案（复制/折行按钮等）
+let currentDoc: { markdown: string; path: string } | null = null;
+
+// ===== 国际化：把静态界面文案按当前语言刷新；语言按钮显示当前语言、点击切换 =====
+function applyI18n() {
+  const loc = getLocale();
+  document.documentElement.setAttribute("lang", loc === "zh" ? "zh" : "en");
+  brandTagEl.textContent = i18n("app.tagline");
+  dropHintEl.textContent = i18n("drop.hint");
+  langBtn.textContent = loc === "zh" ? "中" : "EN";
+  langBtn.title = i18n("lang.switch");
+  applyTheme(); // 同步深色按钮的多语言 tooltip
+  if (currentDoc) render(currentDoc.markdown, currentDoc.path); // 刷新已渲染文档里的文案
+}
+
+async function syncMenuLocale() {
+  try {
+    await invoke("set_locale_menu", { lang: getLocale() });
+  } catch {
+    /* 菜单同步失败不影响使用 */
+  }
+}
+
+langBtn.addEventListener("click", () => {
+  setLocale(getLocale() === "zh" ? "en" : "zh");
+  applyI18n();
+  syncMenuLocale();
+});
+window.addEventListener("storage", (e) => {
+  if (e.key === LANG_STORAGE_KEY) {
+    refreshLocale();
+    applyI18n();
+    syncMenuLocale();
+  }
+});
 
 // HTML 转义
 function esc(s: string): string {
@@ -105,6 +151,7 @@ function renderMeta(fm: string): string {
 
 // 把 markdown 文本渲染到预览区
 async function render(markdown: string, path: string) {
+  currentDoc = { markdown, path };
   const { fm, body } = extractFrontmatter(markdown);
   const rawHtml = await marked.parse(body);
   previewEl.innerHTML = DOMPurify.sanitize((fm ? renderMeta(fm) : "") + rawHtml);
@@ -145,7 +192,7 @@ function resolveImages(dir: string) {
         img.classList.add("zoomable");
       })
       .catch(() => {
-        img.alt = `图片加载失败：${abs}`;
+        img.alt = i18n("img.failed", { path: abs });
       });
   });
 }
@@ -160,7 +207,7 @@ function enhanceCodeBlocks() {
     const btn = document.createElement("button");
     btn.className = "copy-btn";
     btn.type = "button";
-    btn.title = "复制";
+    btn.title = i18n("code.copy");
     btn.innerHTML = COPY_ICON;
     btn.addEventListener("click", async () => {
       const code = pre.querySelector("code")?.textContent ?? pre.textContent ?? "";
@@ -195,12 +242,12 @@ function enhanceTables() {
     const btn = document.createElement("button");
     btn.className = "table-toggle";
     btn.type = "button";
-    btn.title = "不折行";
+    btn.title = i18n("table.nowrap");
     btn.innerHTML = WRAP_ICON;
     btn.addEventListener("click", () => {
       const nowrap = wrap.classList.toggle("nowrap");
       btn.classList.toggle("active", nowrap);
-      btn.title = nowrap ? "折行" : "不折行";
+      btn.title = nowrap ? i18n("table.wrap") : i18n("table.nowrap");
     });
     bar.appendChild(btn);
 
@@ -232,7 +279,7 @@ async function openPath(path: string) {
     const content = await invoke<string>("read_file", { path });
     await render(content, path);
   } catch (err) {
-    previewEl.innerHTML = `<p style="color:#c00">${String(err)}</p>`;
+    previewEl.innerHTML = `<p style="color:#c00">${esc(i18n("file.readError"))}: ${esc(String(err))}</p>`;
     previewEl.hidden = false;
     emptyEl.hidden = true;
   }
@@ -254,7 +301,7 @@ async function pickAndOpen() {
   const selected = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] }],
+    filters: [{ name: i18n("file.dialogName"), extensions: ["md", "markdown", "mdown", "mkd"] }],
   });
   if (typeof selected === "string") {
     await openPath(selected);
@@ -271,6 +318,10 @@ listen<string>("open-file", (e) => {
   if (e.payload) openPath(e.payload);
 });
 
+// 启动：先刷新界面语言并把原生菜单同步到当前语言
+applyI18n();
+syncMenuLocale();
+
 // 启动时取本窗口要打开的文件（文档窗口 / 主窗口冷启动都走这里）
 invoke<string | null>("get_initial_file").then((path) => {
   if (path) openPath(path);
@@ -283,8 +334,13 @@ async function checkForUpdate() {
     const update = await check();
     if (!update) return; // 已是最新
     const yes = await ask(
-      `发现新版本 ${update.version}${update.body ? `\n\n${update.body}` : ""}\n\n现在更新吗？`,
-      { title: "73·素 有更新", kind: "info", okLabel: "更新并重启", cancelLabel: "稍后" },
+      `${i18n("update.prompt", { version: update.version })}${update.body ? `\n\n${update.body}` : ""}`,
+      {
+        title: i18n("update.title"),
+        kind: "info",
+        okLabel: i18n("update.ok"),
+        cancelLabel: i18n("update.cancel"),
+      },
     );
     if (!yes) return;
     await update.downloadAndInstall();

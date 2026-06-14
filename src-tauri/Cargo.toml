@@ -28,4 +28,5 @@ base64 = "0.22.1"
 tauri-plugin-single-instance = "2.4.2"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
+sys-locale = "0.3.2"
 

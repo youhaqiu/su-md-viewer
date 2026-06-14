@@ -130,6 +130,32 @@ body {
   background: rgba(0, 0, 0, 0.06);
 }
 
+/* 语言切换按钮（标题栏右侧，紧邻深色切换按钮左边） */
+#lang-toggle {
+  position: absolute;
+  right: 42px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #57606a;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+#lang-toggle:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
 #title {
   font-size: 13px;
   font-weight: 500;
@@ -494,10 +520,12 @@ html[data-theme="dark"] #titlebar {
 html[data-theme="dark"] #title {
   color: #8b949e;
 }
-html[data-theme="dark"] #theme-toggle {
+html[data-theme="dark"] #theme-toggle,
+html[data-theme="dark"] #lang-toggle {
   color: #8b949e;
 }
-html[data-theme="dark"] #theme-toggle:hover {
+html[data-theme="dark"] #theme-toggle:hover,
+html[data-theme="dark"] #lang-toggle:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 

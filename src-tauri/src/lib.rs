@@ -22,13 +22,13 @@ struct AppState {
 // 读取指定路径的文本文件，返回内容。失败时把错误信息回传给前端。
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| format!("无法读取文件: {e}"))
+    fs::read_to_string(&path).map_err(|e| format!("{e}"))
 }
 
 // 读取本地图片并编码成 data URL，前端直接当 img.src 用，绕开资源协议/scope。
 #[tauri::command]
 fn read_image_data_url(path: String) -> Result<String, String> {
-    let bytes = fs::read(&path).map_err(|e| format!("无法读取图片: {e}"))?;
+    let bytes = fs::read(&path).map_err(|e| format!("{e}"))?;
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     let mime = match ext.as_str() {
         "png" => "image/png",
@@ -52,6 +52,67 @@ fn get_initial_file(window: tauri::WebviewWindow, state: State<AppState>) -> Opt
         return state.pending.lock().unwrap().take();
     }
     state.files.lock().unwrap().remove(&label)
+}
+
+// 按语言构建顶部菜单（zh=中文，否则英文）。约定 macOS 预置项由系统自动本地化。
+fn build_app_menu<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    zh: bool,
+) -> tauri::Result<tauri::menu::Menu<R>> {
+    let (open_label, file_t, edit_t, window_t) = if zh {
+        ("打开…", "文件", "编辑", "窗口")
+    } else {
+        ("Open…", "File", "Edit", "Window")
+    };
+
+    let open_item = MenuItemBuilder::with_id("open", open_label)
+        .accelerator("CmdOrCtrl+O")
+        .build(app)?;
+
+    let app_menu = SubmenuBuilder::new(app, "73·素") // 品牌名不翻译
+        .about(None)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+
+    let file_menu = SubmenuBuilder::new(app, file_t)
+        .item(&open_item)
+        .separator()
+        .close_window()
+        .build()?;
+
+    let edit_menu = SubmenuBuilder::new(app, edit_t)
+        .copy()
+        .select_all()
+        .build()?;
+
+    let window_menu = SubmenuBuilder::new(app, window_t)
+        .minimize()
+        .separator()
+        .close_window()
+        .build()?;
+
+    MenuBuilder::new(app)
+        .items(&[&app_menu, &file_menu, &edit_menu, &window_menu])
+        .build()
+}
+
+// 前端切换语言时调用：在主线程上按新语言重建并替换菜单。
+#[tauri::command]
+fn set_locale_menu(app: tauri::AppHandle, lang: String) {
+    let zh = lang.to_lowercase().starts_with("zh");
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Ok(menu) = build_app_menu(&handle, zh) {
+            let _ = handle.set_menu(menu);
+        }
+    });
 }
 
 // Windows / Linux：文件通过命令行参数传入。从 argv 里挑出存在的文件并打开。
@@ -115,47 +176,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_file,
             read_image_data_url,
-            get_initial_file
+            get_initial_file,
+            set_locale_menu
         ])
         .setup(|app| {
-            // 顶部原生菜单：File > 打开…（⌘O）
-            let open_item = MenuItemBuilder::with_id("open", "打开…")
-                .accelerator("CmdOrCtrl+O")
-                .build(app)?;
-
-            let app_menu = SubmenuBuilder::new(app, "73·素")
-                .about(None)
-                .separator()
-                .services()
-                .separator()
-                .hide()
-                .hide_others()
-                .show_all()
-                .separator()
-                .quit()
-                .build()?;
-
-            let file_menu = SubmenuBuilder::new(app, "File")
-                .item(&open_item)
-                .separator()
-                .close_window()
-                .build()?;
-
-            let edit_menu = SubmenuBuilder::new(app, "Edit")
-                .copy()
-                .select_all()
-                .build()?;
-
-            let window_menu = SubmenuBuilder::new(app, "Window")
-                .minimize()
-                .separator()
-                .close_window()
-                .build()?;
-
-            let menu = MenuBuilder::new(app)
-                .items(&[&app_menu, &file_menu, &edit_menu, &window_menu])
-                .build()?;
-
+            // 顶部原生菜单：默认按系统语言；前端就绪后会调 set_locale_menu 同步到实际语言
+            let zh = sys_locale::get_locale()
+                .map(|l| l.to_lowercase().starts_with("zh"))
+                .unwrap_or(false);
+            let menu = build_app_menu(app.handle(), zh)?;
             app.set_menu(menu)?;
 
             // 冷启动时若由命令行/文件关联带入文件（Windows/Linux），在此打开。

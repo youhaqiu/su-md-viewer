@@ -12,6 +12,7 @@
     <!-- 自定义标题栏（居中标题，可拖拽移动窗口） -->
     <header id="titlebar" data-tauri-drag-region>
       <span id="title">73·素</span>
+      <button id="lang-toggle" type="button" title="切换语言"></button>
       <button id="theme-toggle" type="button" title="切换深色"></button>
     </header>
 
@@ -23,7 +24,7 @@
         <circle cx="86" cy="76" r="6" fill="#B23A2E"/>
       </svg>
       <p class="brand-name">73<span class="brand-dot">·</span>素</p>
-      <p class="brand-tag">素净的 Markdown 阅读器</p>
+      <p class="brand-tag" id="brand-tag">素净的 Markdown 阅读器</p>
     </div>
 
     <!-- 渲染结果 -->
@@ -37,7 +38,7 @@
           <path d="M12 3v12" />
           <path d="M7 10l5 5 5-5" />
         </svg>
-        <span>松手打开 Markdown 文件</span>
+        <span id="drop-hint">松手打开 Markdown 文件</span>
       </div>
     </div>
   </body>
