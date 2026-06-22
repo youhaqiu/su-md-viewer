@@ -27,6 +27,12 @@ fn read_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("{e}"))
 }
 
+// 把编辑后的内容写回指定路径（UTF-8）。失败时把错误信息回传给前端。
+#[tauri::command]
+fn write_file(path: String, content: String) -> Result<(), String> {
+    fs::write(&path, content).map_err(|e| format!("{e}"))
+}
+
 // 读取本地图片并编码成 data URL，前端直接当 img.src 用，绕开资源协议/scope。
 #[tauri::command]
 fn read_image_data_url(path: String) -> Result<String, String> {
@@ -56,48 +62,81 @@ fn get_initial_file(window: tauri::WebviewWindow, state: State<AppState>) -> Opt
     state.files.lock().unwrap().remove(&label)
 }
 
-// 按语言构建顶部菜单（zh=中文，否则英文）。约定 macOS 预置项由系统自动本地化。
+// 按语言构建顶部菜单（zh=中文，否则英文）。
+// 关键：macOS 预置项（关于/隐藏/退出/拷贝…）若用便捷方法会跟随「系统」语言，
+// 导致切到另一种语言时菜单中英混杂；这里一律用 PredefinedMenuItem 显式传本地化文案，
+// 让整份菜单都跟应用内的中/EN 切换走。
 fn build_app_menu<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     zh: bool,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
-    let (open_label, file_t, edit_t, window_t) = if zh {
+    use tauri::menu::PredefinedMenuItem as P;
+
+    let (open_l, file_t, edit_t, window_t) = if zh {
         ("打开…", "文件", "编辑", "窗口")
     } else {
         ("Open…", "File", "Edit", "Window")
     };
+    let (about_l, services_l, hide_l, hide_others_l, show_all_l, quit_l) = if zh {
+        ("关于 73·素", "服务", "隐藏 73·素", "隐藏其他", "全部显示", "退出 73·素")
+    } else {
+        (
+            "About 73·素",
+            "Services",
+            "Hide 73·素",
+            "Hide Others",
+            "Show All",
+            "Quit 73·素",
+        )
+    };
+    let (undo_l, redo_l, cut_l, copy_l, paste_l, select_all_l) = if zh {
+        ("撤销", "重做", "剪切", "拷贝", "粘贴", "全选")
+    } else {
+        ("Undo", "Redo", "Cut", "Copy", "Paste", "Select All")
+    };
+    let (minimize_l, close_l) = if zh {
+        ("最小化", "关闭窗口")
+    } else {
+        ("Minimize", "Close Window")
+    };
 
-    let open_item = MenuItemBuilder::with_id("open", open_label)
+    let open_item = MenuItemBuilder::with_id("open", open_l)
         .accelerator("CmdOrCtrl+O")
         .build(app)?;
 
     let app_menu = SubmenuBuilder::new(app, "73·素") // 品牌名不翻译
-        .about(None)
+        .item(&P::about(app, Some(about_l), None)?)
         .separator()
-        .services()
+        .item(&P::services(app, Some(services_l))?)
         .separator()
-        .hide()
-        .hide_others()
-        .show_all()
+        .item(&P::hide(app, Some(hide_l))?)
+        .item(&P::hide_others(app, Some(hide_others_l))?)
+        .item(&P::show_all(app, Some(show_all_l))?)
         .separator()
-        .quit()
+        .item(&P::quit(app, Some(quit_l))?)
         .build()?;
 
     let file_menu = SubmenuBuilder::new(app, file_t)
         .item(&open_item)
         .separator()
-        .close_window()
+        .item(&P::close_window(app, Some(close_l))?)
         .build()?;
 
+    // 编辑模式下需要完整的编辑动作（撤销/重做/剪切/粘贴），这里一并补上
     let edit_menu = SubmenuBuilder::new(app, edit_t)
-        .copy()
-        .select_all()
+        .item(&P::undo(app, Some(undo_l))?)
+        .item(&P::redo(app, Some(redo_l))?)
+        .separator()
+        .item(&P::cut(app, Some(cut_l))?)
+        .item(&P::copy(app, Some(copy_l))?)
+        .item(&P::paste(app, Some(paste_l))?)
+        .item(&P::select_all(app, Some(select_all_l))?)
         .build()?;
 
     let window_menu = SubmenuBuilder::new(app, window_t)
-        .minimize()
+        .item(&P::minimize(app, Some(minimize_l))?)
         .separator()
-        .close_window()
+        .item(&P::close_window(app, Some(close_l))?)
         .build()?;
 
     MenuBuilder::new(app)
@@ -180,6 +219,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             read_file,
+            write_file,
             read_image_data_url,
             get_initial_file,
             set_locale_menu
