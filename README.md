@@ -4,63 +4,66 @@
 
 # 73·素
 
-**素净的 Markdown 阅读器** · A clean, read-only Markdown viewer
+**A clean, distraction-free Markdown reader** — with quick inline edits when you need them.
+
+English · [简体中文](./README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](./LICENSE)
-[![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB.svg)](https://tauri.app)
+[![Tauri](https://img.shields.io/badge/Tauri-v2-FF5A36.svg)](https://tauri.app)
 
 </div>
 
 ---
 
-「73·素」是一个**只用来看 Markdown 的桌面应用**。双击 `.md` 文件直接进入阅读，没有编辑器、没有目录树、没有多余按钮——把文档安安静静地排好版给你看。
+**73·素** (*sù* — "plain, unadorned") is a desktop app for **reading** Markdown. Double-click a `.md` file and you're straight into the text — no file tree, no panels, no clutter. Just your document, quietly typeset. And when you spot a typo, hit `⌘E` to fix it in place.
 
-## 特性
+## Features
 
-- 📖 **打开即读** — 关联为 `.md` 默认应用，双击直达正文；一文件一窗口
-- 🧮 **数学公式** — KaTeX 渲染行内 / 块级公式
-- 🎨 **代码高亮** — highlight.js，带一键复制按钮
-- 🖼️ **图片与缩放** — 本地图片内联加载，点击放大预览
-- 📊 **表格** — 中文不折行，可切换自适应宽度
-- 🌗 **深色模式** — 跟随系统，可手动切换
-- 🌐 **中英双语** — 界面跟随系统语言，可在标题栏一键切换（含原生菜单）
-- 🏷️ **元信息卡片** — YAML frontmatter 折叠成紧凑卡片，不与正文混杂
-- ✒️ **克制排版** — 14px 墨色正文、马善政毛笔字标，安静耐读
-- 🪟 **自定义标题栏** — 居中标题，可拖拽
+- 📖 **Open and read** — set it as the default app for `.md`; double-click goes straight to the content. One file, one window.
+- ✏️ **Quick edit** — press `⌘E` to edit the raw Markdown, `⌘S` to save in place. Reader-first: editing stays out of the way until you ask for it, and unsaved changes are never lost silently.
+- 🧮 **Math** — inline and block formulas via KaTeX.
+- 🎨 **Syntax highlighting** — highlight.js, with a one-click copy button on every code block.
+- 🖼️ **Images & zoom** — local images load inline; click to zoom.
+- 📊 **Tables** — CJK text doesn't break mid-word; toggle between fit-to-width and scroll.
+- 🌗 **Dark mode** — follows the system, or toggle manually.
+- 🌐 **Bilingual (中 / EN)** — the UI follows your system language and switches with one click in the title bar — native menu included.
+- 🏷️ **Frontmatter card** — YAML frontmatter folds into a compact card instead of cluttering the body.
+- ✒️ **Restrained typography** — 14px ink-toned body text and a brush-stroke wordmark; calm and easy on the eyes.
+- 🪟 **Custom title bar** — centered title, draggable.
 
-## 安装
+## Install
 
 ### macOS
 
-从 [Releases](../../releases) 下载 `73·素_x.x.x_universal.dmg`（同时支持 Intel 与 Apple Silicon），拖入「应用程序」。
+Download `73·素_x.x.x_universal.dmg` from [Releases](../../releases) (works on both Intel and Apple Silicon) and drag it into Applications.
 
-> 应用未经 Apple 签名，首次打开请**右键 →「打开」**绕过 Gatekeeper。
+> The app isn't notarized by Apple. On first launch, **right-click → Open** to get past Gatekeeper.
 
 ### Windows / Linux
 
-从 [Releases](../../releases) 下载对应安装包。文件关联与命令行打开均已支持。
+Download the matching installer from [Releases](../../releases). File association and opening from the command line are both supported.
 
-## 从源码构建
+## Build from source
 
-需要 [Node.js](https://nodejs.org) 与 [Rust](https://www.rust-lang.org/tools/install)。
+Requires [Node.js](https://nodejs.org) and [Rust](https://www.rust-lang.org/tools/install).
 
 ```bash
 npm install
 
-# 开发（热重载）
+# Develop (hot reload)
 npm run tauri dev
 
-# 构建当前平台安装包
+# Build an installer for the current platform
 npm run tauri build
 
-# macOS 通用二进制（Intel + Apple Silicon）
+# macOS universal binary (Intel + Apple Silicon)
 npm run tauri build -- --target universal-apple-darwin
 ```
 
-## 技术栈
+## Tech stack
 
-Tauri v2（Rust 后端）+ Vanilla TypeScript + Vite。Markdown 管线：marked + marked-highlight + marked-katex-extension + highlight.js + KaTeX + DOMPurify + github-markdown-css。
+Tauri v2 (Rust backend) + vanilla TypeScript + Vite. Markdown pipeline: marked + marked-highlight + marked-katex-extension + highlight.js + KaTeX + DOMPurify + github-markdown-css.
 
-## 许可
+## License
 
-代码以 [MIT](./LICENSE) 发布。内置字体「马善政」遵循 SIL OFL 1.1，第三方资源与依赖清单见 [THIRD-PARTY.md](./THIRD-PARTY.md)。
+Released under the [MIT](./LICENSE) license. The bundled "Ma Shan Zheng" font is under SIL OFL 1.1; see [THIRD-PARTY.md](./THIRD-PARTY.md) for the full list of third-party assets and dependencies.
