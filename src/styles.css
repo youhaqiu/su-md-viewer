@@ -8,6 +8,12 @@
 :root {
   font-family: -apple-system, system-ui, "Helvetica Neue", sans-serif;
   color-scheme: light;
+
+  /* 主题色：珊瑚橙。所有交互色（链接 / 列表圈点 / 引用条 / 保存 / 选中态）统一引用 */
+  --accent: #ff5a36;
+  --accent-soft: rgba(255, 90, 54, 0.12);
+  --accent-select: rgba(255, 90, 54, 0.22);
+  --accent-line: rgba(255, 90, 54, 0.4); /* 标题下划线等淡描边 */
 }
 
 * {
@@ -43,6 +49,11 @@
 /* hidden 属性必须能盖过下面 .empty / .drop-overlay 的 display:flex */
 [hidden] {
   display: none !important;
+}
+
+/* 文本选中：主题色淡染 */
+::selection {
+  background: var(--accent-select);
 }
 
 html,
@@ -130,6 +141,55 @@ body {
   background: rgba(0, 0, 0, 0.06);
 }
 
+/* 编辑切换 / 保存按钮（标题栏右侧，仅在已打开文档时出现） */
+#edit-toggle,
+#save-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #57606a;
+  cursor: pointer;
+}
+
+#edit-toggle {
+  right: 74px;
+}
+
+#save-btn {
+  right: 106px;
+}
+
+#edit-toggle:hover,
+#save-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+#save-btn:disabled {
+  color: #c2c8cf;
+  cursor: default;
+}
+
+#save-btn:disabled:hover {
+  background: transparent;
+}
+
+#save-btn.dirty {
+  color: var(--accent);
+}
+
+#save-btn.saved {
+  color: #1a7f37;
+}
+
 /* 语言切换按钮（标题栏右侧，紧邻深色切换按钮左边） */
 #lang-toggle {
   position: absolute;
@@ -209,6 +269,28 @@ body {
   width: 100%;
 }
 
+/* 编辑器：直接编辑原始 Markdown 源码，等宽字体、与预览区一致的留白 */
+.editor {
+  flex: 1 1 auto;
+  width: 100%;
+  margin: 0;
+  padding: 40px 56px 80px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: #fff;
+  color: #353b41;
+  caret-color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 13.5px;
+  line-height: 1.85;
+  -moz-tab-size: 4;
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
 /* frontmatter 元信息卡片：小字号、弱化、与正文分开 */
 .markdown-body .frontmatter {
   margin: 0 0 28px;
@@ -275,7 +357,23 @@ html[data-theme="dark"] .markdown-body .meta-val {
 }
 
 .markdown-body.markdown-body li::marker {
-  color: #0969da;
+  color: var(--accent);
+}
+
+/* 正文链接用主题色（盖过 github-markdown-css 的默认蓝） */
+.markdown-body.markdown-body a {
+  color: var(--accent);
+}
+
+/* 引用块：左竖条用主题色——文档里最常见的强调面，一眼就能看出主题色 */
+.markdown-body.markdown-body blockquote {
+  border-left-color: var(--accent);
+}
+
+/* 一级 / 二级标题的下划线染上主题色，文档结构也带一点设计感 */
+.markdown-body.markdown-body h1,
+.markdown-body.markdown-body h2 {
+  border-bottom-color: var(--accent-line);
 }
 
 /* 标题与上文多留点呼吸空间 */
@@ -434,9 +532,107 @@ html[data-theme="dark"] .markdown-body .meta-val {
 }
 
 .table-toggle.active {
-  color: #0969da;
-  border-color: #0969da;
-  background: #ddf4ff;
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  opacity: 1;
+}
+
+/* 荧光笔高亮：亮底 + 深字（两种主题都保持荧光笔观感，不随深色反转） */
+.markdown-body :is(mark, .hl) {
+  background-color: #ffe16a;
+  color: #2a2620;
+  padding: 0 0.12em;
+  border-radius: 0.18em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone; /* 跨行高亮每段都带圆角 */
+}
+.markdown-body .hl-green {
+  background-color: #b6f3a6;
+}
+.markdown-body .hl-pink {
+  background-color: #ffb3d1;
+}
+.markdown-body .hl-blue {
+  background-color: #aadcff;
+}
+
+/* 选中文字时浮出的荧光笔调色板 */
+.hl-popover {
+  position: fixed;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 11px;
+  background: #fff;
+  border: 1px solid #e1e4e8;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.hl-swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.hl-swatch:hover {
+  transform: scale(1.15);
+}
+.hl-swatch.hl-yellow {
+  background: #ffe16a;
+}
+.hl-swatch.hl-green {
+  background: #b6f3a6;
+}
+.hl-swatch.hl-pink {
+  background: #ffb3d1;
+}
+.hl-swatch.hl-blue {
+  background: #aadcff;
+}
+
+.hl-eraser {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #57606a;
+  cursor: pointer;
+}
+.hl-eraser:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* 轻量 toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 36px;
+  transform: translateX(-50%);
+  z-index: 130;
+  max-width: 80%;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: rgba(20, 20, 20, 0.92);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.toast.show {
   opacity: 1;
 }
 
@@ -489,18 +685,24 @@ html[data-theme="dark"] .markdown-body .meta-val {
   align-items: center;
   gap: 14px;
   padding: 36px 52px;
-  border: 2px dashed #0969da;
+  border: 2px dashed var(--accent);
   border-radius: 16px;
   background: #fff;
-  color: #0969da;
+  color: var(--accent);
   font-size: 16px;
   font-weight: 600;
-  box-shadow: 0 12px 32px rgba(9, 105, 218, 0.18);
+  box-shadow: 0 12px 32px var(--accent-soft);
 }
 
 /* ===================== 深色模式 ===================== */
 html[data-theme="dark"] {
   color-scheme: dark;
+
+  /* 深色下珊瑚橙提亮一档，保证在深背景上的可读性 */
+  --accent: #ff7a52;
+  --accent-soft: rgba(255, 122, 82, 0.16);
+  --accent-select: rgba(255, 122, 82, 0.3);
+  --accent-line: rgba(255, 122, 82, 0.45);
 }
 
 html[data-theme="dark"],
@@ -521,12 +723,31 @@ html[data-theme="dark"] #title {
   color: #8b949e;
 }
 html[data-theme="dark"] #theme-toggle,
-html[data-theme="dark"] #lang-toggle {
+html[data-theme="dark"] #lang-toggle,
+html[data-theme="dark"] #edit-toggle,
+html[data-theme="dark"] #save-btn {
   color: #8b949e;
 }
 html[data-theme="dark"] #theme-toggle:hover,
-html[data-theme="dark"] #lang-toggle:hover {
+html[data-theme="dark"] #lang-toggle:hover,
+html[data-theme="dark"] #edit-toggle:hover,
+html[data-theme="dark"] #save-btn:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+html[data-theme="dark"] #save-btn:disabled {
+  color: #484f58;
+}
+html[data-theme="dark"] #save-btn:disabled:hover {
+  background: transparent;
+}
+html[data-theme="dark"] #save-btn.saved {
+  color: #3fb950;
+}
+
+/* 编辑器深色配色 */
+html[data-theme="dark"] .editor {
+  background: #0d1117;
+  color: #c9d1d9;
 }
 
 /* 阅读排版：正文浅灰、加粗近白、列表标记亮蓝 */
@@ -535,9 +756,6 @@ html[data-theme="dark"] .markdown-body.markdown-body {
 }
 html[data-theme="dark"] .markdown-body.markdown-body strong {
   color: #f0f6fc;
-}
-html[data-theme="dark"] .markdown-body.markdown-body li::marker {
-  color: #58a6ff;
 }
 
 /* 代码块 + highlight.js 暗色配色 */
@@ -595,10 +813,31 @@ html[data-theme="dark"] .copy-btn.copied {
   color: #3fb950;
   border-color: #3fb950;
 }
-html[data-theme="dark"] .table-toggle.active {
-  color: #58a6ff;
-  border-color: #1f6feb;
-  background: #122a4d;
+
+/* 表格：补深色配色（否则沿用 github-markdown-css 的浅色默认值 → 白底浅字看不清） */
+html[data-theme="dark"] .markdown-body table th,
+html[data-theme="dark"] .markdown-body table td {
+  border-color: #30363d;
+}
+html[data-theme="dark"] .markdown-body table tr {
+  background-color: #0d1117;
+  border-top-color: #21262d;
+}
+html[data-theme="dark"] .markdown-body table tr:nth-child(2n) {
+  background-color: #161b22;
+}
+
+/* 荧光笔调色板 / toast 深色 */
+html[data-theme="dark"] .hl-popover {
+  background: #21262d;
+  border-color: #30363d;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+html[data-theme="dark"] .hl-eraser {
+  color: #8b949e;
+}
+html[data-theme="dark"] .hl-eraser:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* 图片描边 */

@@ -12,6 +12,8 @@
     <!-- 自定义标题栏（居中标题，可拖拽移动窗口） -->
     <header id="titlebar" data-tauri-drag-region>
       <span id="title">73·素</span>
+      <button id="save-btn" type="button" title="保存" hidden></button>
+      <button id="edit-toggle" type="button" title="编辑" hidden></button>
       <button id="lang-toggle" type="button" title="切换语言"></button>
       <button id="theme-toggle" type="button" title="切换深色"></button>
     </header>
@@ -29,6 +31,9 @@
 
     <!-- 渲染结果 -->
     <article id="preview" class="markdown-body" hidden></article>
+
+    <!-- 编辑模式：直接编辑原始 Markdown 源码 -->
+    <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>
 
     <!-- 拖拽时的覆盖层 -->
     <div id="drop-overlay" class="drop-overlay" hidden>
