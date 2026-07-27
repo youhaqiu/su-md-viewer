@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="./logo.svg" alt="73·素" width="120" />
+<img src="./logo.svg" alt="73" width="112" />
 
-# 73·素
+# 73
 
-**A clean, distraction-free Markdown reader** — with quick inline edits when you need them.
+**markdown viewer** — a clean, distraction-free reader, with quick edits when you need them.
 
 English · [简体中文](./README.zh-CN.md)
 
@@ -15,27 +15,28 @@ English · [简体中文](./README.zh-CN.md)
 
 ---
 
-**73·素** (*sù* — "plain, unadorned") is a desktop app for **reading** Markdown. Double-click a `.md` file and you're straight into the text — no file tree, no panels, no clutter. Just your document, quietly typeset. And when you spot a typo, hit `⌘E` to fix it in place.
+**73** is a desktop app for **reading** Markdown. Double-click a `.md` file and you're straight into the text — no file tree, no crowded panels, no clutter. Just your document, quietly typeset. Spot a typo? Hit `⌘E` to fix it in place.
 
 ## Features
 
 - 📖 **Open and read** — set it as the default app for `.md`; double-click goes straight to the content. One file, one window.
-- ✏️ **Live typeset editing** — press `⌘E` for a Typora-like single-canvas editor: headings, emphasis, links, quotes, and code appear as you type, while Markdown markers reveal themselves on the active line. Press `⌘S` to save in place.
-- 🧮 **Math** — inline and block formulas via KaTeX.
-- 🎨 **Syntax highlighting** — highlight.js, with a one-click copy button on every code block.
+- 🗂️ **Outline sidebar** — a collapsible heading tree; click to jump, and it highlights the section you're reading. Off by default, one tap to open.
+- ✏️ **Live typeset editing** — press `⌘E` for a Typora-like single-canvas editor: headings, emphasis, links, quotes, and code render as you type, while Markdown markers reveal themselves on the active line. Press `⌘S` to save in place.
+- 🖍️ **Highlighter** — select text in the reader to highlight it in one of four colors; it's written back as `==` / `<mark>` and saved to the file.
+- 🧮 **Math** — inline and block formulas via KaTeX, including formulas written across several lines.
+- ✨ **Syntax highlighting** — highlight.js, with a one-click copy button on every code block.
 - 🖼️ **Images & zoom** — local images load inline; click to zoom.
-- 📊 **Tables** — CJK text doesn't break mid-word; toggle between fit-to-width and scroll.
-- 🌗 **Dark mode** — follows the system, or toggle manually.
-- 🌐 **Bilingual (中 / EN)** — the UI follows your system language and switches with one click in the title bar — native menu included.
-- 🏷️ **Frontmatter card** — YAML frontmatter folds into a compact card instead of cluttering the body.
-- ✒️ **Restrained typography** — 14px ink-toned body text and a brush-stroke wordmark; calm and easy on the eyes.
-- 🪟 **Custom title bar** — centered title, draggable.
+- 📊 **Tables** — CJK text doesn't break mid-word; toggle between fit-to-width and horizontal scroll.
+- 🌗 **Themes** — dark mode (follows the system, or manual), four accent colors, and a sans ⇄ serif reading font.
+- 🧼 **Tidy rendering** — YAML frontmatter folds into a compact card; presentational `<font>` tags from rich-text exports (e.g. Yuque) are stripped for clean reading.
+- 🌐 **Bilingual (中 / EN)** — the UI follows your system language and switches from the native menu (**View → Language**).
+- 🪟 **Out of the way** — custom centered title bar, a word count in the status bar, and closing the window tucks the app into the background (reopen from the Dock) instead of quitting.
 
 ## Install
 
 ### macOS
 
-Download `73·素_x.x.x_universal.dmg` from [Releases](../../releases) (works on both Intel and Apple Silicon) and drag it into Applications.
+Download `73Su_x.x.x_universal.dmg` from [Releases](../../releases) (works on both Intel and Apple Silicon) and drag it into Applications.
 
 > The app isn't notarized by Apple. On first launch, **right-click → Open** to get past Gatekeeper.
 
@@ -62,7 +63,7 @@ npm run tauri build -- --target universal-apple-darwin
 
 ## Tech stack
 
-Tauri v2 (Rust backend) + vanilla TypeScript + Vite. Markdown pipeline: marked + marked-highlight + marked-katex-extension + highlight.js + KaTeX + DOMPurify + github-markdown-css.
+Tauri v2 (Rust backend) + vanilla TypeScript + Vite. Editor: CodeMirror 6. Markdown pipeline: marked + marked-highlight + highlight.js + KaTeX (custom multi-line extension) + DOMPurify + github-markdown-css.
 
 ## License
 
