@@ -1,7 +1,7 @@
 [package]
 name = "md-viewer"
-version = "0.2.0"
-description = "A Tauri App"
+version = "0.3.0"
+description = "73 markdown viewer"
 authors = ["you"]
 edition = "2021"
 

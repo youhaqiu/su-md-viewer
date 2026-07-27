@@ -59,7 +59,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "73·素 ${{ github.ref_name }}"
+          releaseName: "73 ${{ github.ref_name }}"
           releaseBody: "下载下方对应平台的安装包即可。macOS 用 universal 版（Intel + Apple Silicon 通用）。"
           releaseDraft: true
           prerelease: false
