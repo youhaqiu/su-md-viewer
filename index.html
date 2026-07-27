@@ -4,36 +4,59 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>73·素</title>
+    <title>73</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
   <body>
-    <!-- 自定义标题栏（居中标题，可拖拽移动窗口） -->
+    <!-- 自定义标题栏：文档标题保持居中，右侧操作收进统一按钮组 -->
     <header id="titlebar" data-tauri-drag-region>
-      <span id="title">73·素</span>
-      <button id="save-btn" type="button" title="保存" hidden></button>
-      <button id="edit-toggle" type="button" title="编辑" hidden></button>
-      <button id="lang-toggle" type="button" title="切换语言"></button>
-      <button id="theme-toggle" type="button" title="切换深色"></button>
+      <span id="title">73</span>
+      <div class="title-actions" data-tauri-drag-region="false">
+        <div class="document-actions">
+          <button id="toc-toggle" type="button" title="目录" hidden></button>
+          <button id="save-btn" type="button" title="保存" hidden></button>
+          <button id="edit-toggle" type="button" title="编辑" hidden></button>
+        </div>
+        <div class="view-actions">
+          <button id="font-toggle" type="button" title="切换字体"></button>
+          <button id="palette-toggle" type="button" title="配色"></button>
+          <button id="theme-toggle" type="button" title="切换深色"></button>
+        </div>
+        <div id="palette-menu" class="palette-menu" role="menu" hidden></div>
+      </div>
     </header>
 
-    <!-- 未打开文件时：品牌占位页 -->
-    <div id="empty" class="empty">
-      <svg class="brand-mark" width="104" height="104" viewBox="0 0 112 112" xmlns="http://www.w3.org/2000/svg">
-        <rect x="0" y="0" width="112" height="112" rx="28" fill="#FAF7F0" stroke="#E7E1D4" stroke-width="1.5"/>
-        <text x="53" y="80" text-anchor="middle" font-family="Ma Shan Zheng" font-size="62" fill="#1E1B17">73</text>
-        <circle cx="86" cy="76" r="6" fill="#B23A2E"/>
-      </svg>
-      <p class="brand-name">73<span class="brand-dot">·</span>素</p>
-      <p class="brand-tag" id="brand-tag">素净的 Markdown 阅读器</p>
+    <!-- 标题栏下方分成：左侧目录栏 + 右侧主内容区 -->
+    <div id="stage">
+      <!-- 目录（大纲）侧栏：阅读模式且开启时出现，随渲染重建 -->
+      <aside id="toc" class="toc" hidden>
+        <div class="toc-head"><span id="toc-title">目录</span></div>
+        <nav id="toc-list" class="toc-list" aria-label="目录"></nav>
+      </aside>
+
+      <div id="main">
+        <!-- 未打开文件时：品牌占位页 -->
+        <div id="empty" class="empty">
+          <svg class="brand-mark" width="104" height="104" viewBox="0 0 112 112" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="0" width="112" height="112" rx="28" fill="#FAF7F0" stroke="#E7E1D4" stroke-width="1.5"/>
+            <text x="53" y="80" text-anchor="middle" font-family="Ma Shan Zheng" font-size="62" fill="#1E1B17">73</text>
+            <circle cx="86" cy="76" r="6" fill="#B23A2E"/>
+          </svg>
+          <p class="brand-tag">markdown viewer</p>
+        </div>
+
+        <!-- 渲染结果 -->
+        <article id="preview" class="markdown-body" hidden></article>
+
+        <!-- 编辑模式：同一画布里实时排版；当前行显示 Markdown 标记 -->
+        <div id="editor" class="editor" hidden></div>
+        <footer id="edit-status" class="edit-status" hidden>
+          <span class="live-state"><i></i><span id="live-label">实时预览</span></span>
+          <span id="doc-stats"></span>
+        </footer>
+      </div>
     </div>
-
-    <!-- 渲染结果 -->
-    <article id="preview" class="markdown-body" hidden></article>
-
-    <!-- 编辑模式：直接编辑原始 Markdown 源码 -->
-    <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>
 
     <!-- 拖拽时的覆盖层 -->
     <div id="drop-overlay" class="drop-overlay" hidden>

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
-use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
 use tauri::TitleBarStyle;
@@ -78,15 +78,15 @@ fn build_app_menu<R: tauri::Runtime>(
         ("Open…", "File", "Edit", "Window")
     };
     let (about_l, services_l, hide_l, hide_others_l, show_all_l, quit_l) = if zh {
-        ("关于 73·素", "服务", "隐藏 73·素", "隐藏其他", "全部显示", "退出 73·素")
+        ("关于 73", "服务", "隐藏 73", "隐藏其他", "全部显示", "退出 73")
     } else {
         (
-            "About 73·素",
+            "About 73",
             "Services",
-            "Hide 73·素",
+            "Hide 73",
             "Hide Others",
             "Show All",
-            "Quit 73·素",
+            "Quit 73",
         )
     };
     let (undo_l, redo_l, cut_l, copy_l, paste_l, select_all_l) = if zh {
@@ -99,12 +99,17 @@ fn build_app_menu<R: tauri::Runtime>(
     } else {
         ("Minimize", "Close Window")
     };
+    let (view_t, language_t) = if zh {
+        ("视图", "语言")
+    } else {
+        ("View", "Language")
+    };
 
     let open_item = MenuItemBuilder::with_id("open", open_l)
         .accelerator("CmdOrCtrl+O")
         .build(app)?;
 
-    let app_menu = SubmenuBuilder::new(app, "73·素") // 品牌名不翻译
+    let app_menu = SubmenuBuilder::new(app, "73") // 品牌名不翻译
         .item(&P::about(app, Some(about_l), None)?)
         .separator()
         .item(&P::services(app, Some(services_l))?)
@@ -133,6 +138,20 @@ fn build_app_menu<R: tauri::Runtime>(
         .item(&P::select_all(app, Some(select_all_l))?)
         .build()?;
 
+    // 视图 → 语言：中文 / English 两个勾选项，勾中当前语言。切换时广播 menu-set-lang，
+    // 前端各窗口据此改语言并回调 set_locale_menu 重建菜单（刷新勾选态与整份菜单文案）。
+    let lang_zh_item = CheckMenuItemBuilder::with_id("lang-zh", "中文")
+        .checked(zh)
+        .build(app)?;
+    let lang_en_item = CheckMenuItemBuilder::with_id("lang-en", "English")
+        .checked(!zh)
+        .build(app)?;
+    let language_menu = SubmenuBuilder::new(app, language_t)
+        .item(&lang_zh_item)
+        .item(&lang_en_item)
+        .build()?;
+    let view_menu = SubmenuBuilder::new(app, view_t).item(&language_menu).build()?;
+
     let window_menu = SubmenuBuilder::new(app, window_t)
         .item(&P::minimize(app, Some(minimize_l))?)
         .separator()
@@ -140,7 +159,7 @@ fn build_app_menu<R: tauri::Runtime>(
         .build()?;
 
     MenuBuilder::new(app)
-        .items(&[&app_menu, &file_menu, &edit_menu, &window_menu])
+        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu])
         .build()
 }
 
@@ -193,7 +212,7 @@ fn open_path_in_window(app: &tauri::AppHandle, path: String) {
             .unwrap()
             .insert(label.clone(), path);
         let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-            .title("73·素")
+            .title("73")
             .inner_size(900.0, 720.0);
         // 标题栏覆盖样式 + 隐藏原生标题为 macOS 专有 API（其他平台用默认标题栏）
         #[cfg(target_os = "macos")]
@@ -244,31 +263,49 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| {
-            if event.id() == "open" {
-                // 只对当前聚焦的窗口生效，避免每个窗口都弹一次文件框
-                if let Some(w) = app
-                    .webview_windows()
-                    .values()
-                    .find(|w| w.is_focused().unwrap_or(false))
-                {
-                    let _ = w.emit("menu-open", ());
+            match event.id().as_ref() {
+                "open" => {
+                    // 只对当前聚焦的窗口生效，避免每个窗口都弹一次文件框
+                    if let Some(w) = app
+                        .webview_windows()
+                        .values()
+                        .find(|w| w.is_focused().unwrap_or(false))
+                    {
+                        let _ = w.emit("menu-open", ());
+                    }
                 }
+                // 语言切换：广播给所有窗口，让整个应用（含各文档窗口）统一切换语言
+                id @ ("lang-zh" | "lang-en") => {
+                    let lang = if id == "lang-zh" { "zh" } else { "en" };
+                    let _ = app.emit("menu-set-lang", lang);
+                }
+                _ => {}
             }
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, _event| {
-            // macOS：双击 .md / 用本应用打开文件时，系统会发来 Opened 事件。
-            // Opened 变体仅在 macOS 存在，Windows/Linux 走单实例插件的 argv 路径。
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Opened { urls } = _event {
-                for path in urls
-                    .iter()
-                    .filter_map(|u| u.to_file_path().ok())
-                    .map(|p| p.to_string_lossy().to_string())
-                {
-                    open_path_in_window(_app, path);
+            match _event {
+                // 双击 .md / 用本应用打开文件时，系统会发来 Opened 事件。
+                // Opened 变体仅在 macOS 存在，Windows/Linux 走单实例插件的 argv 路径。
+                tauri::RunEvent::Opened { urls } => {
+                    for path in urls
+                        .iter()
+                        .filter_map(|u| u.to_file_path().ok())
+                        .map(|p| p.to_string_lossy().to_string())
+                    {
+                        open_path_in_window(_app, path);
+                    }
                 }
+                // 点 Dock 图标：窗口被关闭按钮隐藏后，在此重新显示并聚焦。
+                tauri::RunEvent::Reopen { .. } => {
+                    for w in _app.webview_windows().values() {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+                _ => {}
             }
         });
 }

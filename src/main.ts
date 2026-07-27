@@ -8,7 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Marked, type TokenizerAndRendererExtension } from "marked";
 import { markedHighlight } from "marked-highlight";
-import markedKatex from "marked-katex-extension";
+import katex from "katex";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
 import {
@@ -18,6 +18,7 @@ import {
   refreshLocale,
   LANG_STORAGE_KEY,
 } from "./i18n";
+import { createMdEditor, type MdEditor } from "./editor";
 
 import "highlight.js/styles/github.css";
 import "github-markdown-css/github-markdown.css";
@@ -37,8 +38,65 @@ const marked = new Marked(
 // breaks:true → 源文件里的单个回车也会换行（贴近 Typora / Obsidian 的观感）
 marked.setOptions({ gfm: true, breaks: true });
 
-// 渲染 $...$ 行内公式与 $$...$$ 块级公式
-marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+// ===== 数学公式（KaTeX）：$...$ 行内、$$...$$ 块级 =====
+// 自建扩展而非直接用 marked-katex-extension：官方规则不允许 $...$ 内出现换行，
+// 于是作者把长公式断成多行书写时（$ … =↵\frac{…} $）就整段渲染失败。这里放宽为
+// 允许公式跨单个换行，但遇到空行（段落分隔）即停止，避免落单的 $ 吞掉整段文字。
+// 结尾需为非 $ / 非换行的实字符，配合非贪婪匹配就近闭合。
+const KATEX_INLINE_RE =
+  /^(\${1,2})(?!\$)((?:\\.|\n(?!\n)|[^\\\n])*?(?:\\.|[^\\\n$]))\1/;
+// 块级：$$ 独占起止行，中间任意内容（含空行）。
+const KATEX_BLOCK_RE = /^(\${1,2})\n((?:\\[^]|[^\\])+?)\n\1(?:\n|$)/;
+
+function renderKatex(text: string, displayMode: boolean): string {
+  return katex.renderToString(text, { throwOnError: false, displayMode });
+}
+
+const katexInline: TokenizerAndRendererExtension = {
+  name: "katexInline",
+  level: "inline",
+  start(src) {
+    const i = src.indexOf("$");
+    return i < 0 ? undefined : i;
+  },
+  tokenizer(src) {
+    const m = KATEX_INLINE_RE.exec(src);
+    if (!m) return undefined;
+    return {
+      type: "katexInline",
+      raw: m[0],
+      text: m[2].trim(),
+      displayMode: m[1].length === 2,
+    };
+  },
+  renderer(token) {
+    return renderKatex(token.text ?? "", Boolean((token as { displayMode?: boolean }).displayMode));
+  },
+};
+
+const katexBlock: TokenizerAndRendererExtension = {
+  name: "katexBlock",
+  level: "block",
+  start(src) {
+    const i = src.indexOf("$$");
+    return i < 0 ? undefined : i;
+  },
+  tokenizer(src) {
+    const m = KATEX_BLOCK_RE.exec(src);
+    if (!m) return undefined;
+    return {
+      type: "katexBlock",
+      raw: m[0],
+      text: m[2].trim(),
+      displayMode: m[1].length === 2,
+    };
+  },
+  renderer(token) {
+    return renderKatex(token.text ?? "", Boolean((token as { displayMode?: boolean }).displayMode)) + "\n";
+  },
+};
+
+marked.use({ extensions: [katexBlock, katexInline] });
 
 // 荧光笔：把 ==高亮文字== 渲染成 <mark>（黄色），与 Obsidian / Typora 同款语法
 const highlightExtension: TokenizerAndRendererExtension = {
@@ -72,6 +130,9 @@ const SUN_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" st
 const MOON_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>`;
 const darkMql = window.matchMedia("(prefers-color-scheme: dark)");
 
+// 编辑器实例（CodeMirror）。在 DOM 引用就绪后创建；这里先声明，供 applyTheme 同步深色。
+let mdEditor: MdEditor | null = null;
+
 function effectiveTheme(): "light" | "dark" {
   const s = localStorage.getItem(THEME_KEY);
   if (s === "light" || s === "dark") return s;
@@ -87,6 +148,7 @@ function applyTheme() {
   root.setAttribute("data-dark-theme", "dark");
   themeBtn.innerHTML = t === "dark" ? SUN_ICON : MOON_ICON; // 显示「点击后会切到」的图标
   themeBtn.title = t === "dark" ? i18n("theme.toLight") : i18n("theme.toDark");
+  mdEditor?.setDark(t === "dark"); // 同步编辑器配色
 }
 
 themeBtn.addEventListener("click", () => {
@@ -101,34 +163,169 @@ window.addEventListener("storage", (e) => {
 });
 applyTheme();
 
+// ===== 阅读字体：黑体 ⇄ 宋体，标题栏一键切换，持久化、多窗口同步 =====
+const FONT_KEY = "font"; // "sans" | "serif"
+const fontBtn = document.querySelector<HTMLButtonElement>("#font-toggle")!;
+const SANS_GLYPH_FONT = '"PingFang SC", -apple-system, "Microsoft YaHei", sans-serif';
+const SERIF_GLYPH_FONT = 'Georgia, "Songti SC", "STSong", "SimSun", serif';
+
+function effectiveFont(): "sans" | "serif" {
+  return localStorage.getItem(FONT_KEY) === "serif" ? "serif" : "sans";
+}
+
+function applyFont() {
+  const f = effectiveFont();
+  document.documentElement.setAttribute("data-font", f);
+  // 按钮显示当前字体的代表字，并用对应字体渲染（黑=黑体，宋=宋体）
+  fontBtn.textContent = f === "serif" ? "宋" : "黑";
+  fontBtn.style.fontFamily = f === "serif" ? SERIF_GLYPH_FONT : SANS_GLYPH_FONT;
+  fontBtn.title = i18n(f === "serif" ? "font.toSans" : "font.toSerif");
+}
+
+fontBtn.addEventListener("click", () => {
+  localStorage.setItem(FONT_KEY, effectiveFont() === "serif" ? "sans" : "serif");
+  applyFont();
+});
+window.addEventListener("storage", (e) => {
+  if (e.key === FONT_KEY) applyFont(); // 其他窗口切换时同步
+});
+applyFont();
+
+// ===== 主题色：4 套配色预设，标题栏调色盘里切换，持久化、多窗口同步 =====
+const ACCENT_KEY = "accent"; // localStorage：未设置时用默认珊瑚橙
+const ACCENTS = [
+  { id: "coral", swatch: "#ff5a36" },
+  { id: "indigo", swatch: "#2f6feb" },
+  { id: "teal", swatch: "#1f8a70" },
+  { id: "violet", swatch: "#6b4eea" },
+] as const;
+type AccentId = (typeof ACCENTS)[number]["id"];
+const DEFAULT_ACCENT: AccentId = "coral";
+const PALETTE_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="5"/><circle cx="15" cy="9" r="5"/><circle cx="12" cy="15" r="5"/></svg>`;
+const paletteBtn = document.querySelector<HTMLButtonElement>("#palette-toggle")!;
+const paletteMenu = document.querySelector<HTMLDivElement>("#palette-menu")!;
+
+function effectiveAccent(): AccentId {
+  const s = localStorage.getItem(ACCENT_KEY);
+  return ACCENTS.some((a) => a.id === s) ? (s as AccentId) : DEFAULT_ACCENT;
+}
+
+// 应用当前配色到 <html data-accent>，并刷新菜单里的选中态
+function applyAccent() {
+  const a = effectiveAccent();
+  document.documentElement.setAttribute("data-accent", a);
+  paletteMenu.querySelectorAll<HTMLButtonElement>(".palette-item").forEach((el) => {
+    el.setAttribute("aria-checked", el.dataset.accent === a ? "true" : "false");
+  });
+}
+
+// 构建调色盘浮层（按当前语言生成色名；切语言时重建以刷新文案）
+function buildPaletteMenu() {
+  paletteBtn.innerHTML = PALETTE_ICON;
+  paletteBtn.title = i18n("palette.switch");
+  paletteMenu.innerHTML = "";
+  for (const { id, swatch } of ACCENTS) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "palette-item";
+    item.dataset.accent = id;
+    item.setAttribute("role", "menuitemradio");
+    const dot = document.createElement("span");
+    dot.className = "palette-swatch";
+    dot.style.background = swatch;
+    const label = document.createElement("span");
+    label.textContent = i18n("accent." + id);
+    item.append(dot, label);
+    item.addEventListener("click", () => {
+      localStorage.setItem(ACCENT_KEY, id);
+      applyAccent();
+      closePalette();
+    });
+    paletteMenu.appendChild(item);
+  }
+  applyAccent();
+}
+
+function closePalette() {
+  paletteMenu.hidden = true;
+}
+
+paletteBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  paletteMenu.hidden = !paletteMenu.hidden;
+});
+// 点空白处 / 按 Esc 关闭浮层
+document.addEventListener("click", (e) => {
+  if (
+    !paletteMenu.hidden &&
+    !paletteMenu.contains(e.target as Node) &&
+    !paletteBtn.contains(e.target as Node)
+  ) {
+    closePalette();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closePalette();
+});
+window.addEventListener("storage", (e) => {
+  if (e.key === ACCENT_KEY) applyAccent(); // 其他窗口切换时同步
+});
+
+buildPaletteMenu();
+
 const titleEl = document.querySelector<HTMLSpanElement>("#title")!;
 const emptyEl = document.querySelector<HTMLDivElement>("#empty")!;
 const previewEl = document.querySelector<HTMLElement>("#preview")!;
 const overlayEl = document.querySelector<HTMLDivElement>("#drop-overlay")!;
-const langBtn = document.querySelector<HTMLButtonElement>("#lang-toggle")!;
-const brandTagEl = document.querySelector<HTMLParagraphElement>("#brand-tag")!;
 const dropHintEl = document.querySelector<HTMLSpanElement>("#drop-hint")!;
+const tocToggleBtn = document.querySelector<HTMLButtonElement>("#toc-toggle")!;
+const tocEl = document.querySelector<HTMLElement>("#toc")!;
+const tocListEl = document.querySelector<HTMLElement>("#toc-list")!;
+const tocTitleEl = document.querySelector<HTMLSpanElement>("#toc-title")!;
 
 // 记住当前已打开的文档，切换语言时重渲染以刷新动态文案（复制/折行按钮等）
 let currentDoc: { markdown: string; path: string } | null = null;
 
-// ===== 编辑模式：切换式（预览 ⇄ 编辑原始 Markdown），手动保存（⌘S）=====
+// ===== 编辑模式：阅读 ⇄ 单画布实时排版编辑，手动保存（⌘S）=====
 const editToggleBtn = document.querySelector<HTMLButtonElement>("#edit-toggle")!;
 const saveBtn = document.querySelector<HTMLButtonElement>("#save-btn")!;
-const editorEl = document.querySelector<HTMLTextAreaElement>("#editor")!;
+const editorEl = document.querySelector<HTMLDivElement>("#editor")!;
+const editStatusEl = document.querySelector<HTMLElement>("#edit-status")!;
+const liveLabelEl = document.querySelector<HTMLSpanElement>("#live-label")!;
+const docStatsEl = document.querySelector<HTMLSpanElement>("#doc-stats")!;
+
+// 创建 CodeMirror 编辑器。回调里引用的函数在后文声明（函数声明已提升）。
+mdEditor = createMdEditor({
+  parent: editorEl,
+  dark: effectiveTheme() === "dark",
+  placeholder: i18n("edit.placeholder"),
+  onChange: (value) => {
+    if (currentDoc && isEditMode) currentDoc.markdown = value;
+    updateEditUI();
+  },
+});
 
 let isEditMode = false;
 let savedMarkdown = ""; // 最近一次落盘的内容，用于判断「是否有未保存修改」
 let docName = ""; // 当前文件名（标题栏脏标记会在前面加 •）
+
+// ===== 目录（大纲）：左侧栏列出各级标题，点击跳转、随滚动高亮当前章节 =====
+const TOC_KEY = "toc"; // localStorage："0"=收起，其余=展开（默认展开）
+const TOC_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.1"/><circle cx="4" cy="12" r="1.1"/><circle cx="4" cy="18" r="1.1"/></svg>`;
+const CARET_ICON = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
+let tocOpen = localStorage.getItem(TOC_KEY) === "1"; // 默认收起，用户开过才记住展开
+let hasToc = false; // 当前文档是否有标题（无标题则不显示目录按钮）
+type TocEntry = { el: HTMLElement; link: HTMLButtonElement };
+let tocEntries: TocEntry[] = [];
 
 const PENCIL_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`;
 const EYE_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const SAVE_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>`;
 const SAVED_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4 4 10-10"/></svg>`;
 
-// 当前生效的文本：编辑时以文本框为准，预览时以已渲染文档为准
+// 当前生效的文本：编辑时以编辑器为准，预览时以已渲染文档为准
 function currentText(): string {
-  return isEditMode ? editorEl.value : currentDoc?.markdown ?? "";
+  return isEditMode ? mdEditor?.getValue() ?? "" : currentDoc?.markdown ?? "";
 }
 
 function isDirty(): boolean {
@@ -141,20 +338,43 @@ function applyMode() {
   emptyEl.hidden = hasDoc;
   previewEl.hidden = !hasDoc || isEditMode;
   editorEl.hidden = !hasDoc || !isEditMode;
+  editStatusEl.hidden = !hasDoc; // 底部状态栏（字数）阅读/编辑模式都显示
   editToggleBtn.hidden = !hasDoc;
   saveBtn.hidden = !hasDoc || (!isEditMode && !isDirty());
+  // 目录：仅在阅读模式、有文档且文档含标题时可用；是否展开由 tocOpen 决定
+  const tocShow = hasDoc && !isEditMode && hasToc && tocOpen;
+  tocToggleBtn.hidden = !hasDoc || isEditMode || !hasToc;
+  tocToggleBtn.setAttribute("aria-pressed", String(tocShow));
+  tocEl.hidden = !tocShow;
+  document.body.dataset.mode = isEditMode ? "edit" : "preview";
 }
 
 // 刷新编辑相关按钮的图标 / 文案 / 状态
 function updateEditUI() {
   editToggleBtn.innerHTML = isEditMode ? EYE_ICON : PENCIL_ICON;
   editToggleBtn.title = isEditMode ? i18n("edit.toPreview") : i18n("edit.toEdit");
+  editToggleBtn.setAttribute("aria-pressed", String(isEditMode));
+  if (!saveBtn.classList.contains("saved")) saveBtn.innerHTML = SAVE_ICON;
   const dirty = isDirty();
   saveBtn.title = i18n("edit.save");
   saveBtn.disabled = !dirty;
   saveBtn.classList.toggle("dirty", dirty);
+  updateDocStats();
   applyMode();
   updateTitle();
+}
+
+function updateDocStats() {
+  // 编辑时按源码计数；阅读时按渲染后的可见正文计数（不含 Markdown 语法 / 已剥离的 <font>）
+  const text = isEditMode ? currentText() : previewEl.textContent ?? "";
+  const characters = Array.from(text.replace(/\s/g, "")).length;
+  const words = text.trim()
+    ? (text.match(/[\p{Script=Han}]|[\p{L}\p{N}_'-]+/gu) ?? []).length
+    : 0;
+  docStatsEl.textContent = i18n("edit.stats", {
+    words: String(words),
+    chars: String(characters),
+  });
 }
 
 // 标题栏：未保存时在文件名前加 • 提示
@@ -162,24 +382,25 @@ function updateTitle() {
   if (!currentDoc) return;
   const dot = isDirty() ? "• " : "";
   titleEl.textContent = dot + docName;
-  getCurrentWindow().setTitle(`${dot}${docName} — 73·素`);
+  getCurrentWindow().setTitle(`${dot}${docName} — 73`);
 }
 
-// 进入编辑：把原始 Markdown 灌进文本框
+// 进入编辑：把 Markdown 灌进实时排版画布
 function enterEdit() {
   if (!currentDoc) return;
   isEditMode = true;
-  editorEl.value = currentDoc.markdown;
+  mdEditor!.setValue(currentDoc.markdown);
   applyMode();
   updateEditUI();
-  editorEl.focus();
+  mdEditor!.refresh(); // 容器刚显示，需重新测量布局
+  mdEditor!.focus();
 }
 
-// 回到预览：用文本框里的内容重渲染（仅内存预览，未保存到磁盘）
+// 完成编辑：用画布中的内容生成完整阅读预览（未保存内容仍只在内存）
 async function exitToPreview() {
   if (!currentDoc) return;
   isEditMode = false;
-  await render(editorEl.value, currentDoc.path);
+  await render(mdEditor!.getValue(), currentDoc.path);
   updateEditUI();
 }
 
@@ -230,9 +451,8 @@ async function confirmDiscardIfDirty(): Promise<boolean> {
 
 editToggleBtn.addEventListener("click", toggleEdit);
 saveBtn.addEventListener("click", save);
-editorEl.addEventListener("input", updateEditUI);
 
-// 快捷键：⌘E 切换编辑 / 预览，⌘S 保存
+// 快捷键：⌘E 切换阅读 / 编辑，⌘S 保存
 document.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (!mod) return;
@@ -245,25 +465,26 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// 关窗口前若有未保存修改则拦截确认。
-// 注意：这个 wry 版本挂了 onCloseRequested 监听后窗口不会自动关闭，必须显式 destroy()
-// （destroy 不会再触发 close-requested，避免死循环；需 core:window:allow-destroy 权限）。
+// 点红灯关闭按钮：不真正关掉，只把窗口隐藏到后台（内容与未保存修改都留在内存），
+// 点 Dock 图标（macOS Reopen）会重新显示。真正退出走 ⌘Q / 菜单「退出」。
+// 因为只是隐藏、不丢内容，这里无需再弹「放弃未保存修改」的确认。
 getCurrentWindow().onCloseRequested(async (event) => {
   event.preventDefault();
-  if (await confirmDiscardIfDirty()) {
-    await getCurrentWindow().destroy();
-  }
+  await getCurrentWindow().hide();
 });
 
 // ===== 国际化：把静态界面文案按当前语言刷新；语言按钮显示当前语言、点击切换 =====
 function applyI18n() {
   const loc = getLocale();
   document.documentElement.setAttribute("lang", loc === "zh" ? "zh" : "en");
-  brandTagEl.textContent = i18n("app.tagline");
   dropHintEl.textContent = i18n("drop.hint");
-  langBtn.textContent = loc === "zh" ? "中" : "EN";
-  langBtn.title = i18n("lang.switch");
+  tocToggleBtn.title = i18n("toc.toggle");
+  tocTitleEl.textContent = i18n("toc.title");
+  liveLabelEl.textContent = i18n("edit.live");
+  mdEditor?.setPlaceholder(i18n("edit.placeholder"));
   applyTheme(); // 同步深色按钮的多语言 tooltip
+  applyFont(); // 刷新字体按钮 tooltip
+  buildPaletteMenu(); // 刷新调色盘按钮 tooltip 与色名
   updateEditUI(); // 刷新编辑 / 保存按钮的多语言 tooltip
   // 切语言会重渲染已打开文档以刷新动态文案，保留原滚动位置（否则会跳回顶部）
   if (currentDoc && !isEditMode) {
@@ -282,8 +503,11 @@ async function syncMenuLocale() {
   }
 }
 
-langBtn.addEventListener("click", () => {
-  setLocale(getLocale() === "zh" ? "en" : "zh");
+// 语言改由原生「视图 → 语言」菜单切换：菜单项触发时广播到所有窗口，各窗口在此响应
+listen<string>("menu-set-lang", (e) => {
+  const lang = e.payload === "zh" ? "zh" : "en";
+  if (getLocale() === lang) return;
+  setLocale(lang);
   applyI18n();
   syncMenuLocale();
 });
@@ -300,6 +524,19 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) =>
     c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&quot;",
   );
+}
+
+// 语雀（Yuque）等富文本编辑器导出的 Markdown 常把文字包进
+// <font style="color:…;background-color:…">…</font> 做样式，甚至把行内代码写成
+// `<font …>nums</font>` —— 于是代码里显示成一坨原始标签。这些 <font> 纯是表现层噪音，
+// 渲染前统一脱掉（只去标签、留文字）。仅作用于「显示」，不改动原文件；围栏代码块内不动，
+// 以免破坏正文里正经讲 HTML 的示例。
+function stripFontTags(md: string): string {
+  // 按 ``` 围栏代码块切分：奇数段是代码块，原样保留；其余段落里剥掉 <font>/</font>
+  return md
+    .split(/(^```[\s\S]*?^```[^\n]*$)/m)
+    .map((seg, i) => (i % 2 === 1 ? seg : seg.replace(/<\/?font\b[^>]*>/gi, "")))
+    .join("");
 }
 
 // 抽出文件开头的 YAML frontmatter（--- ... ---），返回元信息与正文
@@ -326,8 +563,8 @@ function renderMeta(fm: string): string {
 
 // 把 markdown 文本渲染到预览区
 async function render(markdown: string, path: string) {
-  currentDoc = { markdown, path };
-  const { fm, body } = extractFrontmatter(markdown);
+  currentDoc = { markdown, path }; // 原文保持不变（编辑/保存/荧光笔都基于原文）
+  const { fm, body } = extractFrontmatter(stripFontTags(markdown));
   const rawHtml = await marked.parse(body);
   previewEl.innerHTML = DOMPurify.sanitize((fm ? renderMeta(fm) : "") + rawHtml);
   // 文件名显示在居中标题栏（同时设置原生标题，用于窗口切换器）
@@ -338,6 +575,8 @@ async function render(markdown: string, path: string) {
   resolveImages(dir);
   enhanceCodeBlocks();
   enhanceTables();
+  buildToc();
+  updateDocStats(); // 阅读模式的字数按渲染后的可见正文统计
   previewEl.scrollTop = 0;
 }
 
@@ -428,6 +667,136 @@ function enhanceTables() {
     block.appendChild(wrap);
   });
 }
+
+// ===== 目录（大纲）：可折叠的树形结构 =====
+type TocNode = {
+  el: HTMLElement;
+  level: number;
+  link: HTMLButtonElement;
+  children: TocNode[];
+};
+
+// 用标题文字创建一个跳转按钮
+function makeTocLink(h: HTMLElement, text: string): HTMLButtonElement {
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "toc-link";
+  link.textContent = text;
+  link.title = text;
+  link.addEventListener("click", () => scrollToHeading(h));
+  return link;
+}
+
+// 把一个树节点渲染成 DOM：折叠箭头（有子级才可点）+ 标题按钮 + 子级容器
+function renderTocNode(node: TocNode): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "toc-node";
+
+  const row = document.createElement("div");
+  row.className = "toc-row";
+
+  const caret = document.createElement("button");
+  caret.type = "button";
+  caret.className = "toc-caret";
+  if (node.children.length) {
+    caret.innerHTML = CARET_ICON;
+    caret.setAttribute("aria-label", "展开/收起");
+    caret.addEventListener("click", (e) => {
+      e.stopPropagation(); // 只折叠，不跳转
+      wrap.classList.toggle("collapsed");
+    });
+  } else {
+    caret.classList.add("leaf"); // 占位对齐，无箭头、不可点
+    caret.tabIndex = -1;
+  }
+
+  row.append(caret, node.link);
+  wrap.appendChild(row);
+
+  if (node.children.length) {
+    const kids = document.createElement("div");
+    kids.className = "toc-children";
+    node.children.forEach((c) => kids.appendChild(renderTocNode(c)));
+    wrap.appendChild(kids);
+  }
+  return wrap;
+}
+
+// 渲染后扫描预览里的标题，按层级构建树并重建左侧目录。无标题则整块隐藏。
+function buildToc() {
+  tocListEl.innerHTML = "";
+  tocEntries = [];
+  const headings = Array.from(
+    previewEl.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"),
+  ).filter((h) => (h.textContent ?? "").trim());
+
+  // 按标题级别用栈建树：层级更高（数字更小）的节点作为父级
+  const roots: TocNode[] = [];
+  const stack: TocNode[] = [];
+  for (const h of headings) {
+    const text = (h.textContent ?? "").trim();
+    const level = Number(h.tagName[1]);
+    const node: TocNode = { el: h, level, link: makeTocLink(h, text), children: [] };
+    while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
+    if (stack.length) stack[stack.length - 1].children.push(node);
+    else roots.push(node);
+    stack.push(node);
+    tocEntries.push({ el: h, link: node.link });
+  }
+
+  roots.forEach((n) => tocListEl.appendChild(renderTocNode(n)));
+  hasToc = tocEntries.length > 0;
+  applyMode(); // 依据 hasToc 刷新目录按钮 / 侧栏显隐
+  updateTocActive();
+}
+
+// 把预览滚动到某个标题（预览区自身是滚动容器，用相对位移计算目标位置）
+function scrollToHeading(h: HTMLElement) {
+  const base = previewEl.getBoundingClientRect().top;
+  const y = previewEl.scrollTop + (h.getBoundingClientRect().top - base) - 12;
+  previewEl.scrollTo({ top: y, behavior: "smooth" });
+}
+
+// 高亮当前所在章节：取视口顶部往下 80px 处、仍在其上方的最后一个标题
+function updateTocActive() {
+  if (tocEl.hidden || tocEntries.length === 0) return;
+  const base = previewEl.getBoundingClientRect().top;
+  let activeIdx = 0;
+  for (let i = 0; i < tocEntries.length; i++) {
+    if (tocEntries[i].el.getBoundingClientRect().top - base <= 80) activeIdx = i;
+    else break;
+  }
+  tocEntries.forEach((e, i) => {
+    const on = i === activeIdx;
+    e.link.classList.toggle("active", on);
+    // 让高亮项保持在目录可视区（被折叠隐藏时 offsetParent 为 null，跳过）
+    if (on && e.link.offsetParent !== null) e.link.scrollIntoView({ block: "nearest" });
+  });
+}
+
+tocToggleBtn.innerHTML = TOC_ICON;
+tocToggleBtn.addEventListener("click", () => {
+  tocOpen = !tocOpen;
+  localStorage.setItem(TOC_KEY, tocOpen ? "1" : "0");
+  applyMode();
+  updateTocActive();
+});
+window.addEventListener("storage", (e) => {
+  if (e.key === TOC_KEY) {
+    tocOpen = localStorage.getItem(TOC_KEY) !== "0";
+    applyMode();
+    updateTocActive();
+  }
+});
+// 预览滚动时刷新高亮（rAF 节流）
+let tocRaf = 0;
+previewEl.addEventListener("scroll", () => {
+  if (tocRaf) return;
+  tocRaf = requestAnimationFrame(() => {
+    tocRaf = 0;
+    updateTocActive();
+  });
+});
 
 // 点击图片放大预览（lightbox）
 const lightbox = document.createElement("div");
@@ -558,7 +927,7 @@ function nthIndexOf(s: string, sub: string, n: number): number {
 async function applyDocEdit(next: string, persist = false) {
   if (!currentDoc) return;
   const y = previewEl.scrollTop;
-  if (isEditMode) editorEl.value = next;
+  if (isEditMode) mdEditor!.setValue(next);
   await render(next, currentDoc.path);
   previewEl.scrollTop = y;
   if (persist) {

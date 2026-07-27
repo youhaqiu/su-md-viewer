@@ -20,7 +20,7 @@ English · [简体中文](./README.zh-CN.md)
 ## Features
 
 - 📖 **Open and read** — set it as the default app for `.md`; double-click goes straight to the content. One file, one window.
-- ✏️ **Quick edit** — press `⌘E` to edit the raw Markdown, `⌘S` to save in place. Reader-first: editing stays out of the way until you ask for it, and unsaved changes are never lost silently.
+- ✏️ **Live typeset editing** — press `⌘E` for a Typora-like single-canvas editor: headings, emphasis, links, quotes, and code appear as you type, while Markdown markers reveal themselves on the active line. Press `⌘S` to save in place.
 - 🧮 **Math** — inline and block formulas via KaTeX.
 - 🎨 **Syntax highlighting** — highlight.js, with a one-click copy button on every code block.
 - 🖼️ **Images & zoom** — local images load inline; click to zoom.
