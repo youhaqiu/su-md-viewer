@@ -2,13 +2,6 @@
 
 本项目自身以 MIT 许可证发布（见 [LICENSE](./LICENSE)）。下列内置资源与依赖按其各自许可证分发。
 
-## 内嵌字体
-
-- **Ma Shan Zheng（马善政）** — 用于品牌字标「73」。
-  - 版权：Copyright 2018 The Ma Shan Zheng Project Authors (https://github.com/googlefonts/mashanzheng)
-  - 许可证：SIL Open Font License 1.1，全文见 [`licenses/MaShanZheng-OFL.txt`](./licenses/MaShanZheng-OFL.txt)
-  - 仓库内 `src/assets/MaShanZheng-subset.woff2` 为按 OFL 允许的子集化产物（仅保留数字、间隔点与「素」字）。
-
 ## 主要运行时依赖（均为宽松许可）
 
 | 库 | 用途 | 许可证 |

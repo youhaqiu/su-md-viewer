@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="./logo.svg" alt="73" width="112" />
+<img src="./logo.svg" alt="Sū" width="112" />
 
-# 73
+# 📖 Sū
 
-**markdown viewer** · 素净、专注的阅读器，需要时也能就地改一笔
+**macOS 上的原生 Markdown 阅读器** · 双击即读，`⌘E` 就地改，支持 Mermaid 与 ASCII 图
 
 [English](./README.md) · 简体中文
 
@@ -15,7 +15,7 @@
 
 ---
 
-「73」是一个**专心看 Markdown 的桌面应用**。双击 `.md` 文件直接进入阅读，没有文件树、没有满屏面板、没有多余按钮——把文档安安静静地排好版给你看。看到错字想改？按 `⌘E` 就地修一笔。
+「Sū（素）」是一个**专心看 Markdown 的桌面应用**。双击 `.md` 文件直接进入阅读，没有文件树、没有满屏面板、没有多余按钮——把文档安安静静地排好版给你看。看到错字想改？按 `⌘E` 就地修一笔。
 
 ## 特性
 
@@ -39,7 +39,7 @@
 
 ### macOS
 
-从 [Releases](../../releases) 下载 `73Su_x.x.x_universal.dmg`（同时支持 Intel 与 Apple Silicon），拖入「应用程序」。
+从 [Releases](../../releases) 下载 `Sū_x.x.x_universal.dmg`（同时支持 Intel 与 Apple Silicon），拖入「应用程序」。
 
 > 应用未经 Apple 签名，首次打开请**右键 →「打开」**绕过 Gatekeeper。
 
@@ -70,4 +70,4 @@ Tauri v2（Rust 后端）+ Vanilla TypeScript + Vite。编辑器：CodeMirror 6�
 
 ## 许可
 
-代码以 [MIT](./LICENSE) 发布。内置字体「马善政」遵循 SIL OFL 1.1，第三方资源与依赖清单见 [THIRD-PARTY.md](./THIRD-PARTY.md)。
+代码以 [MIT](./LICENSE) 发布。第三方资源与依赖清单见 [THIRD-PARTY.md](./THIRD-PARTY.md)。

@@ -559,7 +559,7 @@ function updateTitle() {
   if (!currentDoc) return;
   const dot = isDirty() ? "• " : "";
   titleEl.textContent = dot + docName;
-  getCurrentWindow().setTitle(`${dot}${docName} — 73`);
+  getCurrentWindow().setTitle(`${dot}${docName} — Sū`);
 }
 
 // 离开编辑时记下改到哪儿（含光标列位置），原地折返时用它精确还原

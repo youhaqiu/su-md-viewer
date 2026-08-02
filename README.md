@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="./logo.svg" alt="73" width="112" />
+<img src="./logo.svg" alt="Sū" width="112" />
 
-# 73
+# 📖 Sū
 
-**markdown viewer** — a clean, distraction-free reader, with quick edits when you need them.
+**A native Markdown reader for macOS** — double-click to read, `⌘E` to edit, renders Mermaid & ASCII.
 
 English · [简体中文](./README.zh-CN.md)
 
@@ -15,7 +15,7 @@ English · [简体中文](./README.zh-CN.md)
 
 ---
 
-**73** is a desktop app for **reading** Markdown. Double-click a `.md` file and you're straight into the text — no file tree, no crowded panels, no clutter. Just your document, quietly typeset. Spot a typo? Hit `⌘E` to fix it in place.
+**Sū** (素 — "plain, unadorned") is a desktop app for **reading** Markdown. Double-click a `.md` file and you're straight into the text — no file tree, no crowded panels, no clutter. Just your document, quietly typeset. Spot a typo? Hit `⌘E` to fix it in place.
 
 ## Features
 
@@ -39,7 +39,7 @@ English · [简体中文](./README.zh-CN.md)
 
 ### macOS
 
-Download `73Su_x.x.x_universal.dmg` from [Releases](../../releases) (works on both Intel and Apple Silicon) and drag it into Applications.
+Download `Sū_x.x.x_universal.dmg` from [Releases](../../releases) (works on both Intel and Apple Silicon) and drag it into Applications.
 
 > The app isn't notarized by Apple. On first launch, **right-click → Open** to get past Gatekeeper.
 
@@ -70,4 +70,4 @@ Tauri v2 (Rust backend) + vanilla TypeScript + Vite. Editor: CodeMirror 6. Markd
 
 ## License
 
-Released under the [MIT](./LICENSE) license. The bundled "Ma Shan Zheng" font is under SIL OFL 1.1; see [THIRD-PARTY.md](./THIRD-PARTY.md) for the full list of third-party assets and dependencies.
+Released under the [MIT](./LICENSE) license. See [THIRD-PARTY.md](./THIRD-PARTY.md) for the full list of third-party assets and dependencies.

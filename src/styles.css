@@ -1,10 +1,3 @@
-/* 内嵌马善政毛笔字体子集（仅数字 / 中点 / 素），保证任何机器上品牌字标都是毛笔体 */
-@font-face {
-  font-family: "Ma Shan Zheng";
-  src: url("./assets/MaShanZheng-subset.woff2") format("woff2");
-  font-display: swap;
-}
-
 :root {
   --ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
     "PingFang SC", sans-serif;
@@ -550,18 +543,6 @@ body {
 
 .brand-mark {
   filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.08));
-}
-
-.brand-name {
-  margin: 22px 0 0;
-  font-family: "Ma Shan Zheng", serif;
-  font-size: 40px;
-  color: #1b1a18;
-  letter-spacing: 2px;
-}
-
-.brand-dot {
-  color: #b23a2e;
 }
 
 /* 副标题：英文小字号 wordmark，字距拉开、弱化，衬在 logo 下方 */
@@ -1299,9 +1280,6 @@ html[data-theme="dark"] .markdown-body img {
 /* 滚动条滑块颜色改由变量控制（见 :root / 下方深色变量），此处无需再单列规则 */
 
 /* 品牌占位页 */
-html[data-theme="dark"] .brand-name {
-  color: #e6e1d6;
-}
 html[data-theme="dark"] .brand-tag {
   color: #6e7681;
 }
@@ -1635,12 +1613,6 @@ body[data-mode="preview"] .live-state {
   width: 84px;
   height: 84px;
   filter: drop-shadow(0 10px 24px rgba(30, 28, 24, 0.07));
-}
-
-.brand-name {
-  margin-top: 18px;
-  color: var(--text);
-  font-size: 34px;
 }
 
 .brand-tag {

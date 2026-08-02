@@ -1,6 +1,6 @@
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <!-- 品牌徽标：圆角方 + 毛笔「73」+ 珊瑚红点（与应用启动页一致） -->
+  <!-- 品牌徽标：圆角方 + 衬线字标「Sū」+ 珊瑚红点（与应用启动页一致） -->
   <rect x="8" y="8" width="112" height="112" rx="28" fill="#FAF7F0" stroke="#E7E1D4" stroke-width="1.5"/>
-  <text x="62" y="86" text-anchor="middle" font-family="Ma Shan Zheng, serif" font-size="62" fill="#1E1B17">73</text>
-  <circle cx="94" cy="82" r="6" fill="#B23A2E"/>
+  <text x="59" y="82" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="48" fill="#1E1B17">Sū</text>
+  <circle cx="97" cy="78" r="6" fill="#B23A2E"/>
 </svg>

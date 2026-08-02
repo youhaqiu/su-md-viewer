@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "73Su",
+  "productName": "Sū",
   "version": "0.4.0",
   "identifier": "com.youhaqiu.md-viewer",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "73",
+        "title": "Sū",
         "width": 900,
         "height": 720,
         "dragDropEnabled": true,
