@@ -19,5 +19,7 @@
 | [marked-katex-extension](https://github.com/UziTech/marked-katex-extension) | 公式渲染桥接 | MIT |
 | [highlight.js](https://github.com/highlightjs/highlight.js) | 语法高亮 | BSD-3-Clause |
 | [KaTeX](https://github.com/KaTeX/KaTeX) | 数学公式 | MIT |
+| [Mermaid](https://github.com/mermaid-js/mermaid) | Mermaid 图表渲染（懒加载） | MIT |
+| [Rough.js](https://github.com/rough-stuff/rough) | 图表的手绘笔触 | MIT |
 | [DOMPurify](https://github.com/cure53/DOMPurify) | HTML 消毒 | Apache-2.0 / MPL-2.0 |
 | [github-markdown-css](https://github.com/sindresorhus/github-markdown-css) | 排版样式 | MIT |

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh" data-theme="light" data-accent="coral">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>图表适配预览</title>
+    <script type="module" src="/diagram-preview.ts"></script>
+    <style>
+      /* 这个页面只是临时预览壳，不属于应用本体。
+         应用里 body 是 overflow:hidden、滚动交给正文区；这里没有那套外壳，
+         得把高度与滚动还给页面本身，否则整页不能滚。 */
+      html,
+      body {
+        height: auto;
+        min-height: 100%;
+        overflow: visible;
+      }
+      body {
+        display: block;
+        margin: 0;
+        background: var(--canvas);
+        color: var(--text);
+      }
+      #preview {
+        flex: none;
+        height: auto;
+        overflow: visible;
+      }
+      .bar {
+        position: sticky;
+        top: 0;
+        z-index: 60;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--border);
+        background: var(--canvas);
+        font-family: var(--ui-font);
+        font-size: 12.5px;
+      }
+      .bar button {
+        padding: 5px 10px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--soft-bg);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      .bar button:hover { border-color: var(--accent); }
+      .bar .dot {
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        border-radius: 50%;
+      }
+      .bar .hint { margin-left: auto; color: var(--muted-text); }
+      #preview { max-width: 900px; margin: 0 auto; padding: 28px 24px 120px; }
+      .drop {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: color-mix(in srgb, var(--canvas) 82%, transparent);
+        font-family: var(--ui-font);
+        font-size: 15px;
+        color: var(--muted-text);
+      }
+      .drop.on { display: flex; }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <button id="theme">切深色</button>
+      <span>主题色</span>
+      <button class="dot" data-accent="coral" style="background:#ff5a36"></button>
+      <button class="dot" data-accent="indigo" style="background:#2f6feb"></button>
+      <button class="dot" data-accent="teal" style="background:#1f8a70"></button>
+      <button class="dot" data-accent="violet" style="background:#6b4eea"></button>
+      <button id="reload">重载示例文档</button>
+      <span class="hint">把 .md 拖进来看你自己的文档 · 图卡片悬停出工具条 · ⌘/Ctrl+滚轮缩放</span>
+    </div>
+    <article id="preview" class="markdown-body"></article>
+    <div class="drop" id="drop">松手渲染这份 Markdown</div>
+  </body>
+</html>

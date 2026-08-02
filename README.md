@@ -19,18 +19,19 @@ English · [简体中文](./README.zh-CN.md)
 
 ## Features
 
-- 📖 **Open and read** — set it as the default app for `.md`; double-click goes straight to the content. One file, one window.
+- 📖 **Open and read** — set it as the default app for `.md`; double-click goes straight to the content. `.txt` opens too (typeset as Markdown). One file, one window.
 - 🗂️ **Outline sidebar** — a collapsible heading tree; click to jump, and it highlights the section you're reading. Off by default, one tap to open.
 - ✏️ **Live typeset editing** — press `⌘E` for a Typora-like single-canvas editor: headings, emphasis, links, quotes, and code render as you type, while Markdown markers reveal themselves on the active line. Press `⌘S` to save in place.
 - 🖍️ **Highlighter** — select text in the reader to highlight it in one of four colors; it's written back as `==` / `<mark>` and saved to the file.
 - 🧮 **Math** — inline and block formulas via KaTeX, including formulas written across several lines.
 - ✨ **Syntax highlighting** — highlight.js, with a one-click copy button on every code block.
+- 🔀 **Diagrams, all of them** — Mermaid, flowchart.js `flow` syntax, and hand-drawn ASCII / box-drawing art all render into the same card, drawn in a **hand-sketched style** (wobbly strokes, hachure fill, handwriting labels). Five styles in the toolbar: hand-drawn, clean, neon glow, gradient glass, and cyber circuit — plus a Colorful switch that works with any of them, giving each node its own hue starting from your accent color. Drag nodes to rearrange, zoom and pan, flip to the source, export SVG / PNG, colors follow your theme. Untagged code blocks are auto-detected, so old documents need no edits.
 - 🖼️ **Images & zoom** — local images load inline; click to zoom.
 - 📊 **Tables** — CJK text doesn't break mid-word; toggle between fit-to-width and horizontal scroll.
 - 🌗 **Themes** — dark mode (follows the system, or manual), four accent colors, and a sans ⇄ serif reading font.
 - 🧼 **Tidy rendering** — YAML frontmatter folds into a compact card; presentational `<font>` tags from rich-text exports (e.g. Yuque) are stripped for clean reading.
 - 🌐 **Bilingual (中 / EN)** — the UI follows your system language and switches from the native menu (**View → Language**).
-- 🪟 **Out of the way** — custom centered title bar, a word count in the status bar, and closing the window tucks the app into the background (reopen from the Dock) instead of quitting.
+- 🪟 **Out of the way** — custom centered title bar and a word count in the status bar. Closing a window really closes it (you're asked first if there are unsaved changes); closing the last one quits the app.
 
 ## Install
 
@@ -63,7 +64,7 @@ npm run tauri build -- --target universal-apple-darwin
 
 ## Tech stack
 
-Tauri v2 (Rust backend) + vanilla TypeScript + Vite. Editor: CodeMirror 6. Markdown pipeline: marked + marked-highlight + highlight.js + KaTeX (custom multi-line extension) + DOMPurify + github-markdown-css.
+Tauri v2 (Rust backend) + vanilla TypeScript + Vite. Editor: CodeMirror 6. Markdown pipeline: marked + marked-highlight + highlight.js + KaTeX (custom multi-line extension) + DOMPurify + github-markdown-css. Diagrams: a self-contained pipeline — parser → graph model → layered layout → Canvas / SVG renderer — handles ASCII art, `flow` syntax, and Mermaid's flowcharts and state diagrams; the remaining Mermaid types (sequence, gantt, class, …) fall back to the lazy-loaded official library. Rough.js supplies the hand-drawn strokes throughout.
 
 ## License
 

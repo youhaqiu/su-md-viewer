@@ -18,9 +18,17 @@ import {
   refreshLocale,
   LANG_STORAGE_KEY,
 } from "./i18n";
-import { createMdEditor, type MdEditor } from "./editor";
+import { createMdEditor, type EditorViewState, type MdEditor } from "./editor";
+import { preserveTextLayout } from "./plaintext";
+import { enhanceDiagrams, refreshDiagrams } from "./diagram";
+import {
+  STYLE_KEY as DIAGRAM_STYLE_KEY,
+  TOOLS_EVENT as DIAGRAM_TOOLS_EVENT,
+  TOOLS_KEY as DIAGRAM_TOOLS_KEY,
+} from "./diagram/theme";
 
-import "highlight.js/styles/github.css";
+// 不引 highlight.js 自带主题：它是 GitHub 的高饱和配色，跟这里安静的正文调子不搭，
+// 而且只有浅色一套，深色得再补一遍。token 配色统一写在 styles.css 里，走 CSS 变量。
 import "github-markdown-css/github-markdown.css";
 import "katex/dist/katex.min.css";
 
@@ -123,11 +131,92 @@ const highlightExtension: TokenizerAndRendererExtension = {
 };
 marked.use({ extensions: [highlightExtension] });
 
+// ===== 界面元素引用 =====
+// 放在最前面：下面各处 applyXxx() 在模块初始化阶段就会跑一遍，那时若引用还没初始化会踩 TDZ。
+const titleEl = document.querySelector<HTMLSpanElement>("#title")!;
+const emptyEl = document.querySelector<HTMLDivElement>("#empty")!;
+const previewEl = document.querySelector<HTMLElement>("#preview")!;
+const overlayEl = document.querySelector<HTMLDivElement>("#drop-overlay")!;
+const dropHintEl = document.querySelector<HTMLSpanElement>("#drop-hint")!;
+const tocToggleBtn = document.querySelector<HTMLButtonElement>("#toc-toggle")!;
+const tocEl = document.querySelector<HTMLElement>("#toc")!;
+const tocListEl = document.querySelector<HTMLElement>("#toc-list")!;
+const tocTitleEl = document.querySelector<HTMLSpanElement>("#toc-title")!;
+const appearanceBtn = document.querySelector<HTMLButtonElement>("#appearance-toggle")!;
+const appearanceMenu = document.querySelector<HTMLDivElement>("#appearance-menu")!;
+
+// ===== 阅读位置：切主题 / 字体 / 配色 / 语言时留在原处，别弹回文档顶部 =====
+// 不能只记 scrollTop：这些操作会重画图表、换字体、重排正文，高度一变像素值就对不上，
+// 何况重渲染时图片和图表卡片是异步撑开的，当场恢复也只会被后到的高度顶跑。
+// 于是锚定「视口顶部那一块正文元素 + 它相对视口顶的偏移」，并在随后的高度变化里持续校正。
+type ReadAnchor = { index: number; offset: number; top: number };
+
+function captureAnchor(): ReadAnchor {
+  const top = previewEl.scrollTop;
+  const base = previewEl.getBoundingClientRect().top;
+  const kids = Array.from(previewEl.children) as HTMLElement[];
+  for (let i = 0; i < kids.length; i++) {
+    const r = kids[i].getBoundingClientRect();
+    if (r.bottom - base > 1) return { index: i, offset: r.top - base, top }; // 第一个还没滚出去的块
+  }
+  return { index: -1, offset: 0, top };
+}
+
+// 把锚点元素挪回原来的位置，返回落定后的 scrollTop（用于分辨后续滚动是不是用户自己动的）
+function applyAnchor(a: ReadAnchor): number {
+  const kid = previewEl.children[a.index] as HTMLElement | undefined;
+  if (kid) {
+    const base = previewEl.getBoundingClientRect().top;
+    previewEl.scrollTop += kid.getBoundingClientRect().top - base - a.offset;
+  } else {
+    previewEl.scrollTop = a.top; // 正文整个换了（无锚点可循）：退回原像素位置
+  }
+  return previewEl.scrollTop;
+}
+
+let stopKeeping: (() => void) | null = null;
+
+// 在接下来的一小段时间里盯着正文高度变化持续校正锚点；用户一动手就立刻收手，别跟人抢滚动条
+function keepAnchor(a: ReadAnchor, ms = 2000) {
+  stopKeeping?.();
+  if (previewEl.hidden) return; // 编辑模式下预览不可见，量不出位置也没必要动
+  let expected = applyAnchor(a);
+  const ro = new ResizeObserver(() => {
+    expected = applyAnchor(a);
+  });
+  for (const kid of Array.from(previewEl.children)) ro.observe(kid);
+  const onScroll = () => {
+    if (Math.abs(previewEl.scrollTop - expected) > 2) stop(); // 位置对不上 → 是用户滚的
+  };
+  const stop = () => {
+    ro.disconnect();
+    clearTimeout(timer);
+    previewEl.removeEventListener("scroll", onScroll);
+    previewEl.removeEventListener("wheel", stop);
+    previewEl.removeEventListener("pointerdown", stop);
+    if (stopKeeping === stop) stopKeeping = null;
+  };
+  const timer = window.setTimeout(stop, ms);
+  previewEl.addEventListener("scroll", onScroll);
+  previewEl.addEventListener("wheel", stop, { passive: true });
+  previewEl.addEventListener("pointerdown", stop);
+  stopKeeping = stop;
+}
+
+// 执行一个会改变正文排版的动作，做完把阅读位置放回原处
+function keepReadingPos(fn: () => void | Promise<void>): void {
+  const a = captureAnchor();
+  const done = fn();
+  if (done instanceof Promise) void done.then(() => keepAnchor(a));
+  else keepAnchor(a);
+}
+
 // ===== 深色模式：默认跟随系统，可手动切换，选择持久化、多窗口同步 =====
 const THEME_KEY = "theme"; // "light" | "dark" | 未设置(跟随系统)
-const themeBtn = document.querySelector<HTMLButtonElement>("#theme-toggle")!;
-const SUN_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
-const MOON_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>`;
+// 标题栏图标统一规格：24 网格、16px 显示、线宽 1.7、圆头圆角，画面控制在 3～21 之间。
+// 之前每枚是各写各的（15/16px、1.5/1.7/1.8 线宽），排在一起就一枚粗一枚细、一枚大一枚小。
+const ICON_ATTRS = `viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"`;
+
 const darkMql = window.matchMedia("(prefers-color-scheme: dark)");
 
 // 编辑器实例（CodeMirror）。在 DOM 引用就绪后创建；这里先声明，供 applyTheme 同步深色。
@@ -139,6 +228,20 @@ function effectiveTheme(): "light" | "dark" {
   return darkMql.matches ? "dark" : "light";
 }
 
+// 深浅三档：跟随系统 / 浅色 / 深色（跟随系统 = 不写这条设置）
+type ThemeChoice = "system" | "light" | "dark";
+
+function themeChoice(): ThemeChoice {
+  const s = localStorage.getItem(THEME_KEY);
+  return s === "light" || s === "dark" ? s : "system";
+}
+
+function setThemeChoice(c: ThemeChoice) {
+  if (c === "system") localStorage.removeItem(THEME_KEY);
+  else localStorage.setItem(THEME_KEY, c);
+  applyTheme();
+}
+
 function applyTheme() {
   const t = effectiveTheme();
   const root = document.documentElement;
@@ -146,15 +249,12 @@ function applyTheme() {
   root.setAttribute("data-color-mode", t); // 供 github-markdown.css 切换
   root.setAttribute("data-light-theme", "light");
   root.setAttribute("data-dark-theme", "dark");
-  themeBtn.innerHTML = t === "dark" ? SUN_ICON : MOON_ICON; // 显示「点击后会切到」的图标
-  themeBtn.title = t === "dark" ? i18n("theme.toLight") : i18n("theme.toDark");
   mdEditor?.setDark(t === "dark"); // 同步编辑器配色
+  syncAppearance();
+  // 图表按新配色重画：mermaid 那类要整张重出，重画期间卡片高度会塌一下，得守住阅读位置
+  keepReadingPos(() => refreshDiagrams());
 }
 
-themeBtn.addEventListener("click", () => {
-  localStorage.setItem(THEME_KEY, effectiveTheme() === "dark" ? "light" : "dark");
-  applyTheme();
-});
 darkMql.addEventListener("change", () => {
   if (!localStorage.getItem(THEME_KEY)) applyTheme(); // 仅在跟随系统时响应
 });
@@ -163,35 +263,34 @@ window.addEventListener("storage", (e) => {
 });
 applyTheme();
 
-// ===== 阅读字体：黑体 ⇄ 宋体，标题栏一键切换，持久化、多窗口同步 =====
+// ===== 阅读字体：黑体 ⇄ 宋体，持久化、多窗口同步 =====
 const FONT_KEY = "font"; // "sans" | "serif"
-const fontBtn = document.querySelector<HTMLButtonElement>("#font-toggle")!;
+type FontId = "sans" | "serif";
 const SANS_GLYPH_FONT = '"PingFang SC", -apple-system, "Microsoft YaHei", sans-serif';
 const SERIF_GLYPH_FONT = 'Georgia, "Songti SC", "STSong", "SimSun", serif';
 
-function effectiveFont(): "sans" | "serif" {
+function effectiveFont(): FontId {
   return localStorage.getItem(FONT_KEY) === "serif" ? "serif" : "sans";
+}
+
+function setFont(f: FontId) {
+  localStorage.setItem(FONT_KEY, f);
+  applyFont();
 }
 
 function applyFont() {
   const f = effectiveFont();
-  document.documentElement.setAttribute("data-font", f);
-  // 按钮显示当前字体的代表字，并用对应字体渲染（黑=黑体，宋=宋体）
-  fontBtn.textContent = f === "serif" ? "宋" : "黑";
-  fontBtn.style.fontFamily = f === "serif" ? SERIF_GLYPH_FONT : SANS_GLYPH_FONT;
-  fontBtn.title = i18n(f === "serif" ? "font.toSans" : "font.toSerif");
+  // 换字体会改变行高与折行，正文整体高度随之变化 → 同样守住阅读位置
+  keepReadingPos(() => document.documentElement.setAttribute("data-font", f));
+  syncAppearance();
 }
 
-fontBtn.addEventListener("click", () => {
-  localStorage.setItem(FONT_KEY, effectiveFont() === "serif" ? "sans" : "serif");
-  applyFont();
-});
 window.addEventListener("storage", (e) => {
   if (e.key === FONT_KEY) applyFont(); // 其他窗口切换时同步
 });
 applyFont();
 
-// ===== 主题色：4 套配色预设，标题栏调色盘里切换，持久化、多窗口同步 =====
+// ===== 主题色：4 套配色预设，持久化、多窗口同步 =====
 const ACCENT_KEY = "accent"; // localStorage：未设置时用默认珊瑚橙
 const ACCENTS = [
   { id: "coral", swatch: "#ff5a36" },
@@ -201,87 +300,162 @@ const ACCENTS = [
 ] as const;
 type AccentId = (typeof ACCENTS)[number]["id"];
 const DEFAULT_ACCENT: AccentId = "coral";
-const PALETTE_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="5"/><circle cx="15" cy="9" r="5"/><circle cx="12" cy="15" r="5"/></svg>`;
-const paletteBtn = document.querySelector<HTMLButtonElement>("#palette-toggle")!;
-const paletteMenu = document.querySelector<HTMLDivElement>("#palette-menu")!;
-
+// 调色板：原来是三个 r=5 的大圆叠在一起，16px 下糊成一坨黑团。换成画家调色板——
+// 和图表卡片工具条里的「配色」是同一枚，两处说的也是同一件事。
 function effectiveAccent(): AccentId {
   const s = localStorage.getItem(ACCENT_KEY);
   return ACCENTS.some((a) => a.id === s) ? (s as AccentId) : DEFAULT_ACCENT;
 }
 
-// 应用当前配色到 <html data-accent>，并刷新菜单里的选中态
-function applyAccent() {
-  const a = effectiveAccent();
-  document.documentElement.setAttribute("data-accent", a);
-  paletteMenu.querySelectorAll<HTMLButtonElement>(".palette-item").forEach((el) => {
-    el.setAttribute("aria-checked", el.dataset.accent === a ? "true" : "false");
-  });
-}
-
-// 构建调色盘浮层（按当前语言生成色名；切语言时重建以刷新文案）
-function buildPaletteMenu() {
-  paletteBtn.innerHTML = PALETTE_ICON;
-  paletteBtn.title = i18n("palette.switch");
-  paletteMenu.innerHTML = "";
-  for (const { id, swatch } of ACCENTS) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "palette-item";
-    item.dataset.accent = id;
-    item.setAttribute("role", "menuitemradio");
-    const dot = document.createElement("span");
-    dot.className = "palette-swatch";
-    dot.style.background = swatch;
-    const label = document.createElement("span");
-    label.textContent = i18n("accent." + id);
-    item.append(dot, label);
-    item.addEventListener("click", () => {
-      localStorage.setItem(ACCENT_KEY, id);
-      applyAccent();
-      closePalette();
-    });
-    paletteMenu.appendChild(item);
-  }
+function setAccent(a: AccentId) {
+  localStorage.setItem(ACCENT_KEY, a);
   applyAccent();
 }
 
-function closePalette() {
-  paletteMenu.hidden = true;
+function applyAccent() {
+  document.documentElement.setAttribute("data-accent", effectiveAccent());
+  syncAppearance();
+  keepReadingPos(() => refreshDiagrams()); // 图表按新主题色重画，阅读位置不动
 }
 
-paletteBtn.addEventListener("click", (e) => {
+// ===== 外观浮层：深浅 / 主题色 / 正文字体 =====
+// 这三样原先各占标题栏一枚按钮。它们改的是同一件事——这篇文档看起来什么样——
+// 而且都是「设一次就不太动」的偏好，各摆一枚按钮既占地方又让标题栏显得杂。
+// 合成一枚「外观」按钮，点开是一张小面板，三档各一行。
+const APPEARANCE_ICON = `<svg ${ICON_ATTRS}><path d="M12 3.6a8.4 8.4 0 1 0 0 16.8c1.15 0 1.75-.78 1.75-1.55 0-1.45-1.15-1.55-1.15-2.6 0-.78.66-1.35 1.5-1.35h1.55A4.7 4.7 0 0 0 20.4 10c0-3.6-3.75-6.4-8.4-6.4z"/><circle cx="7.9" cy="11.2" r="1.15" fill="currentColor" stroke="none"/><circle cx="10.5" cy="7.7" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.9" cy="8.2" r="1.15" fill="currentColor" stroke="none"/></svg>`;
+// 浮层的两个 DOM 引用在文件开头一并取了：applyTheme() 在模块初始化阶段就会调 syncAppearance()，
+// 引用放在这里会踩 TDZ（整个模块直接崩掉，标题栏一枚按钮都出不来）。
+
+// 一组分段单选（深浅、字体都用它）
+function segmented<T extends string>(
+  options: { id: T; label: string; font?: string }[],
+  current: () => T,
+  onPick: (id: T) => void,
+): HTMLDivElement {
+  const seg = document.createElement("div");
+  seg.className = "ap-seg";
+  seg.setAttribute("role", "radiogroup");
+  for (const o of options) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ap-seg-item";
+    b.dataset.value = o.id;
+    b.setAttribute("role", "radio");
+    b.textContent = o.label;
+    if (o.font) b.style.fontFamily = o.font; // 字体那档用本尊显示，所见即所得
+    b.addEventListener("click", () => onPick(o.id));
+    seg.appendChild(b);
+  }
+  seg.dataset.current = current();
+  return seg;
+}
+
+function group(label: string, control: HTMLElement): HTMLDivElement {
+  const g = document.createElement("div");
+  g.className = "ap-group";
+  const l = document.createElement("div");
+  l.className = "ap-label";
+  l.textContent = label;
+  g.append(l, control);
+  return g;
+}
+
+// 按当前语言重建浮层（切语言时调用一次即可刷新全部文案）
+function buildAppearanceMenu() {
+  appearanceBtn.innerHTML = APPEARANCE_ICON;
+  appearanceBtn.title = i18n("appearance.title");
+  appearanceMenu.innerHTML = "";
+
+  appearanceMenu.appendChild(
+    group(
+      i18n("appearance.mode"),
+      segmented<ThemeChoice>(
+        [
+          { id: "system", label: i18n("appearance.system") },
+          { id: "light", label: i18n("appearance.light") },
+          { id: "dark", label: i18n("appearance.dark") },
+        ],
+        themeChoice,
+        setThemeChoice,
+      ),
+    ),
+  );
+
+  const swatches = document.createElement("div");
+  swatches.className = "ap-swatches";
+  swatches.setAttribute("role", "radiogroup");
+  for (const { id, swatch } of ACCENTS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ap-swatch";
+    b.dataset.value = id;
+    b.setAttribute("role", "radio");
+    b.title = i18n("accent." + id);
+    b.style.setProperty("--swatch", swatch);
+    b.addEventListener("click", () => setAccent(id));
+    swatches.appendChild(b);
+  }
+  appearanceMenu.appendChild(group(i18n("appearance.accent"), swatches));
+
+  appearanceMenu.appendChild(
+    group(
+      i18n("appearance.font"),
+      segmented<FontId>(
+        [
+          { id: "sans", label: i18n("font.sans"), font: SANS_GLYPH_FONT },
+          { id: "serif", label: i18n("font.serif"), font: SERIF_GLYPH_FONT },
+        ],
+        effectiveFont,
+        setFont,
+      ),
+    ),
+  );
+
+  syncAppearance();
+}
+
+// 把三档的当前值刷到浮层上（浮层还没建好时静默跳过——applyTheme 在建之前就会跑一次）
+function syncAppearance() {
+  if (!appearanceMenu.childElementCount) return;
+  const mark = (root: Element, current: string) => {
+    root.querySelectorAll<HTMLElement>("[role='radio']").forEach((el) => {
+      el.setAttribute("aria-checked", el.dataset.value === current ? "true" : "false");
+    });
+  };
+  const [modeGroup, accentGroup, fontGroup] = Array.from(appearanceMenu.children);
+  mark(modeGroup, themeChoice());
+  mark(accentGroup, effectiveAccent());
+  mark(fontGroup, effectiveFont());
+}
+
+function closeAppearance() {
+  appearanceMenu.hidden = true;
+}
+
+appearanceBtn.addEventListener("click", (e) => {
   e.stopPropagation();
-  paletteMenu.hidden = !paletteMenu.hidden;
+  appearanceMenu.hidden = !appearanceMenu.hidden;
 });
-// 点空白处 / 按 Esc 关闭浮层
+// 点空白处 / 按 Esc 关闭浮层（面板里点选不关，方便连着调几档）
 document.addEventListener("click", (e) => {
   if (
-    !paletteMenu.hidden &&
-    !paletteMenu.contains(e.target as Node) &&
-    !paletteBtn.contains(e.target as Node)
+    !appearanceMenu.hidden &&
+    !appearanceMenu.contains(e.target as Node) &&
+    !appearanceBtn.contains(e.target as Node)
   ) {
-    closePalette();
+    closeAppearance();
   }
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closePalette();
+  if (e.key === "Escape") closeAppearance();
 });
 window.addEventListener("storage", (e) => {
   if (e.key === ACCENT_KEY) applyAccent(); // 其他窗口切换时同步
+  if (e.key === DIAGRAM_STYLE_KEY) keepReadingPos(() => refreshDiagrams(true)); // 图表绘制风格同步
+  if (e.key === DIAGRAM_TOOLS_KEY) window.dispatchEvent(new Event(DIAGRAM_TOOLS_EVENT)); // 工具条收展同步
 });
 
-buildPaletteMenu();
-
-const titleEl = document.querySelector<HTMLSpanElement>("#title")!;
-const emptyEl = document.querySelector<HTMLDivElement>("#empty")!;
-const previewEl = document.querySelector<HTMLElement>("#preview")!;
-const overlayEl = document.querySelector<HTMLDivElement>("#drop-overlay")!;
-const dropHintEl = document.querySelector<HTMLSpanElement>("#drop-hint")!;
-const tocToggleBtn = document.querySelector<HTMLButtonElement>("#toc-toggle")!;
-const tocEl = document.querySelector<HTMLElement>("#toc")!;
-const tocListEl = document.querySelector<HTMLElement>("#toc-list")!;
-const tocTitleEl = document.querySelector<HTMLSpanElement>("#toc-title")!;
+buildAppearanceMenu();
 
 // 记住当前已打开的文档，切换语言时重渲染以刷新动态文案（复制/折行按钮等）
 let currentDoc: { markdown: string; path: string } | null = null;
@@ -311,17 +485,20 @@ let docName = ""; // 当前文件名（标题栏脏标记会在前面加 •）
 
 // ===== 目录（大纲）：左侧栏列出各级标题，点击跳转、随滚动高亮当前章节 =====
 const TOC_KEY = "toc"; // localStorage："0"=收起，其余=展开（默认展开）
-const TOC_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.1"/><circle cx="4" cy="12" r="1.1"/><circle cx="4" cy="18" r="1.1"/></svg>`;
+// 目录开关：原来是「列表」图标，但它开的其实是左边那条侧栏，而不是「一份清单」。
+// 换成侧栏图标——一个方框加一道竖线，左边那一栏就是要拉出来的东西，开关和结果对得上。
+const TOC_ICON = `<svg ${ICON_ATTRS}><rect x="3.4" y="4.6" width="17.2" height="14.8" rx="2.6"/><line x1="9.7" y1="4.6" x2="9.7" y2="19.4"/></svg>`;
 const CARET_ICON = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
 let tocOpen = localStorage.getItem(TOC_KEY) === "1"; // 默认收起，用户开过才记住展开
 let hasToc = false; // 当前文档是否有标题（无标题则不显示目录按钮）
 type TocEntry = { el: HTMLElement; link: HTMLButtonElement };
 let tocEntries: TocEntry[] = [];
 
-const PENCIL_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`;
-const EYE_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
-const SAVE_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>`;
-const SAVED_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4 4 10-10"/></svg>`;
+// 铅笔：原来是「一道斜杠 + 一条底线」，16px 下只看得出斜杠。换成带笔头的铅笔本身。
+const PENCIL_ICON = `<svg ${ICON_ATTRS}><path d="M4.4 19.6l4.1-1.1L19 8a2 2 0 0 0-2.8-2.8L5.6 15.6l-1.2 4z"/><path d="M14.6 7.4l2.8 2.8"/></svg>`;
+const EYE_ICON = `<svg ${ICON_ATTRS}><path d="M2.6 12S6 5.9 12 5.9 21.4 12 21.4 12 18 18.1 12 18.1 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.9"/></svg>`;
+const SAVE_ICON = `<svg ${ICON_ATTRS}><path d="M18.6 20.5H5.4a1.9 1.9 0 0 1-1.9-1.9V5.4a1.9 1.9 0 0 1 1.9-1.9h9.7l5.4 5.4v9.7a1.9 1.9 0 0 1-1.9 1.9z"/><path d="M16.4 20.5v-6.9H7.6v6.9M7.6 3.5v4.3h6.1"/></svg>`;
+const SAVED_ICON = `<svg ${ICON_ATTRS}><path d="M5.4 12.4l4.2 4.2 9-9"/></svg>`;
 
 // 当前生效的文本：编辑时以编辑器为准，预览时以已渲染文档为准
 function currentText(): string {
@@ -385,23 +562,34 @@ function updateTitle() {
   getCurrentWindow().setTitle(`${dot}${docName} — 73`);
 }
 
+// 离开编辑时记下改到哪儿（含光标列位置），原地折返时用它精确还原
+let editView: (EditorViewState & { line: number }) | null = null;
+
 // 进入编辑：把 Markdown 灌进实时排版画布
 function enterEdit() {
   if (!currentDoc) return;
+  const line = sourceLineOf(captureAnchor()); // 得趁预览还看得见时量
   isEditMode = true;
   mdEditor!.setValue(currentDoc.markdown);
   applyMode();
   updateEditUI();
   mdEditor!.refresh(); // 容器刚显示，需重新测量布局
+  // 阅读位置没挪动过（⌘E 出去看一眼又回来）就连光标一起还原，别把光标打回段首；
+  // 挪过了就以阅读位置为准，落到刚才读到的那一段
+  if (editView && Math.abs(editView.line - line) <= 2) mdEditor!.setViewState(editView);
+  else mdEditor!.revealLine(line + 1);
   mdEditor!.focus();
 }
 
 // 完成编辑：用画布中的内容生成完整阅读预览（未保存内容仍只在内存）
 async function exitToPreview() {
   if (!currentDoc) return;
+  const line = mdEditor!.currentLine() - 1; // 编辑时正看着哪一行
+  editView = { ...mdEditor!.getViewState(), line }; // 记下改到哪儿，原地折返时用
   isEditMode = false;
   await render(mdEditor!.getValue(), currentDoc.path);
   updateEditUI();
+  scrollPreviewToLine(line); // 回到刚才改到的那一段
 }
 
 function toggleEdit() {
@@ -465,12 +653,13 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// 点红灯关闭按钮：不真正关掉，只把窗口隐藏到后台（内容与未保存修改都留在内存），
-// 点 Dock 图标（macOS Reopen）会重新显示。真正退出走 ⌘Q / 菜单「退出」。
-// 因为只是隐藏、不丢内容，这里无需再弹「放弃未保存修改」的确认。
+// 点红灯关闭按钮：真正关掉这个窗口（早先是隐藏到后台，于是开了几个文档窗口再关，
+// 它们其实都还在，只是看不见）。有未保存修改时先问一句，确认放弃才放行。
+// 关掉全部窗口后应用仍留在 Dock（macOS 惯例），点图标会开一个新的空窗口。
 getCurrentWindow().onCloseRequested(async (event) => {
-  event.preventDefault();
-  await getCurrentWindow().hide();
+  if (!(await confirmDiscardIfDirty())) {
+    event.preventDefault();
+  }
 });
 
 // ===== 国际化：把静态界面文案按当前语言刷新；语言按钮显示当前语言、点击切换 =====
@@ -484,14 +673,11 @@ function applyI18n() {
   mdEditor?.setPlaceholder(i18n("edit.placeholder"));
   applyTheme(); // 同步深色按钮的多语言 tooltip
   applyFont(); // 刷新字体按钮 tooltip
-  buildPaletteMenu(); // 刷新调色盘按钮 tooltip 与色名
+  buildAppearanceMenu(); // 按新语言重建外观浮层（tooltip、分档文案、色名）
   updateEditUI(); // 刷新编辑 / 保存按钮的多语言 tooltip
-  // 切语言会重渲染已打开文档以刷新动态文案，保留原滚动位置（否则会跳回顶部）
+  // 切语言会重渲染已打开文档以刷新动态文案，保留原阅读位置（否则会跳回顶部）
   if (currentDoc && !isEditMode) {
-    const y = previewEl.scrollTop;
-    render(currentDoc.markdown, currentDoc.path).then(() => {
-      previewEl.scrollTop = y;
-    });
+    keepReadingPos(() => render(currentDoc!.markdown, currentDoc!.path));
   }
 }
 
@@ -539,11 +725,15 @@ function stripFontTags(md: string): string {
     .join("");
 }
 
-// 抽出文件开头的 YAML frontmatter（--- ... ---），返回元信息与正文
-function extractFrontmatter(md: string): { fm: string | null; body: string } {
+// 抽出文件开头的 YAML frontmatter（--- ... ---），返回元信息、正文，以及正文从第几行开始
+function extractFrontmatter(md: string): { fm: string | null; body: string; skipLines: number } {
   const m = md.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/);
-  if (!m) return { fm: null, body: md };
-  return { fm: m[1], body: md.slice(m[0].length) };
+  if (!m) return { fm: null, body: md, skipLines: 0 };
+  return { fm: m[1], body: md.slice(m[0].length), skipLines: countLines(m[0]) };
+}
+
+function countLines(s: string): number {
+  return (s.match(/\n/g) ?? []).length;
 }
 
 // 把 frontmatter 渲染成紧凑的元信息卡片
@@ -561,11 +751,104 @@ function renderMeta(fm: string): string {
   return `<div class="frontmatter">${rows}</div>`;
 }
 
+// ===== 正文 ⇄ 源码行：进出编辑模式时落在同一段文字上 =====
+// 两层映射，能用精确的就用精确的：
+//
+// 一、逐块对应。marked 的顶层 token 与预览里的顶层块一一对应，把各 token 的 raw 依次累加
+//     成行号，就得到「预览第 i 块 = 源码第几行」。数量对不上就整张作废——错位的映射会把人
+//     送到别的段落去，比没有更糟。（正文里夹了 <div> 包住若干块这类写法就会对不上：那些块
+//     成了 div 的子节点，不再是顶层。）
+// 二、按标题插值。「预览里的第 k 个标题 = 源码里的第 k 个标题」不受 HTML 嵌套影响，标题之间
+//     按位置比例折算。落点最差也在同一节里，够用。文档没有标题时退化为整篇按比例折算。
+//
+// stripFontTags 只删标签不动换行，两层用的行号都与原文对得上。
+let blockLines: number[] = []; // 与 previewEl.children 一一对应，值为 0 基行号；空表示不可用
+let headingAnchors: { el: HTMLElement; line: number }[] = []; // 预览标题 ⇄ 源码行
+
+// 渲染不出元素的 token，得跳过，否则后面全错位一格
+function tokenRendersNothing(tk: { type: string; raw?: string }): boolean {
+  if (tk.type === "space" || tk.type === "def") return true; // 空行、链接引用定义
+  return tk.type === "html" && /^\s*<!--[\s\S]*-->\s*$/.test(tk.raw ?? ""); // 纯 HTML 注释
+}
+
+function buildSourceMap(body: string, skipLines: number, hasMeta: boolean) {
+  const blocks: number[] = [];
+  const headings: number[] = [];
+  if (hasMeta) blocks.push(0); // frontmatter 卡片对应文件开头
+  let line = skipLines;
+  for (const tk of marked.lexer(body)) {
+    if (!tokenRendersNothing(tk)) blocks.push(line);
+    if (tk.type === "heading") headings.push(line);
+    line += countLines(tk.raw ?? "");
+  }
+  blockLines = blocks.length === previewEl.children.length ? blocks : [];
+
+  const els = Array.from(previewEl.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6"));
+  // 数量对不上说明有标题藏在引用块 / 列表里（不是顶层 token），这层也只好放弃
+  headingAnchors =
+    els.length === headings.length ? els.map((el, i) => ({ el, line: headings[i] })) : [];
+}
+
+// 源码第 line 行落在预览的第几块：取起始行不超过它的最后一块
+function blockOfLine(line: number): number {
+  let found = -1;
+  for (let i = 0; i < blockLines.length; i++) {
+    if (blockLines[i] <= line) found = i;
+    else break;
+  }
+  return found;
+}
+
+// 分段线性插值：xs 单调不减，返回对应的 y
+function lerpAt(x: number, xs: number[], ys: number[]): number {
+  if (x <= xs[0]) return ys[0];
+  for (let i = 1; i < xs.length; i++) {
+    if (x > xs[i]) continue;
+    const span = xs[i] - xs[i - 1];
+    return ys[i - 1] + (span > 0 ? ((x - xs[i - 1]) / span) * (ys[i] - ys[i - 1]) : 0);
+  }
+  return ys[ys.length - 1];
+}
+
+// 插值用的锚点：文档首 + 各标题 + 文档尾，一边是预览里的纵坐标，一边是源码行号
+function interpolationAnchors(): { tops: number[]; lines: number[] } {
+  const base = previewEl.getBoundingClientRect().top - previewEl.scrollTop;
+  const tops = [0];
+  const lines = [0];
+  for (const a of headingAnchors) {
+    tops.push(a.el.getBoundingClientRect().top - base);
+    lines.push(a.line);
+  }
+  tops.push(previewEl.scrollHeight);
+  lines.push(countLines(currentDoc?.markdown ?? "") + 1);
+  return { tops, lines };
+}
+
+// 阅读位置 → 源码行（0 基）
+function sourceLineOf(anchor: ReadAnchor): number {
+  if (anchor.index >= 0 && anchor.index < blockLines.length) return blockLines[anchor.index];
+  const { tops, lines } = interpolationAnchors();
+  return Math.round(lerpAt(previewEl.scrollTop, tops, lines));
+}
+
+// 源码行（0 基）→ 把对应正文顶到视野上沿
+function scrollPreviewToLine(line: number) {
+  const block = blockOfLine(line);
+  if (block >= 0) {
+    keepAnchor({ index: block, offset: 0, top: 0 });
+    return;
+  }
+  const { tops, lines } = interpolationAnchors();
+  keepAnchor({ index: -1, offset: 0, top: Math.round(lerpAt(line, lines, tops)) });
+}
+
 // 把 markdown 文本渲染到预览区
 async function render(markdown: string, path: string) {
   currentDoc = { markdown, path }; // 原文保持不变（编辑/保存/荧光笔都基于原文）
-  const { fm, body } = extractFrontmatter(stripFontTags(markdown));
-  const rawHtml = await marked.parse(body);
+  const { fm, body, skipLines } = extractFrontmatter(stripFontTags(markdown));
+  // .txt 里空白就是排版：先把 ASCII 图、对齐的表格、缩进的段落钉住，再交给 Markdown
+  const prepared = /\.txt$/i.test(path) ? preserveTextLayout(body) : body;
+  const rawHtml = await marked.parse(prepared);
   previewEl.innerHTML = DOMPurify.sanitize((fm ? renderMeta(fm) : "") + rawHtml);
   // 文件名显示在居中标题栏（同时设置原生标题，用于窗口切换器）
   docName = path.split("/").pop() ?? path;
@@ -573,10 +856,12 @@ async function render(markdown: string, path: string) {
   updateTitle();
   const dir = path.slice(0, path.lastIndexOf("/"));
   resolveImages(dir);
+  enhanceDiagrams(previewEl); // 先把图表代码块换成卡片，剩下的才是真代码块
   enhanceCodeBlocks();
   enhanceTables();
   buildToc();
   updateDocStats(); // 阅读模式的字数按渲染后的可见正文统计
+  buildSourceMap(prepared, skipLines, fm !== null); // 各增强步骤只做等量替换，块数已定
   previewEl.scrollTop = 0;
 }
 
@@ -613,26 +898,48 @@ function resolveImages(dir: string) {
 const COPY_ICON = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="9" rx="1.5"/><path d="M3.5 10.5h-1A1 1 0 0 1 1.5 9.5v-7A1 1 0 0 1 2.5 1.5h7a1 1 0 0 1 1 1v1"/></svg>`;
 const CHECK_ICON = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8.5l3.2 3.2L13 4.5"/></svg>`;
 
-// 给每个代码块加「复制」图标按钮
+// 从 <code class="hljs language-xxx"> 里取语言名，用来在代码块右上角标一下
+function codeLangOf(pre: HTMLPreElement): string {
+  const code = pre.querySelector("code");
+  if (!code) return "";
+  for (const cls of Array.from(code.classList)) {
+    if (cls.startsWith("language-")) return cls.slice("language-".length);
+  }
+  return "";
+}
+
+// 给每个代码块加「语言标 + 复制」。
+// 图表卡片里的 pre（源码视图 / 字符画回落）跳过——卡片自己那条工具条上已经有复制了。
 function enhanceCodeBlocks() {
-  previewEl.querySelectorAll("pre").forEach((pre) => {
-    const btn = document.createElement("button");
-    btn.className = "copy-btn";
-    btn.type = "button";
-    btn.title = i18n("code.copy");
-    btn.innerHTML = COPY_ICON;
-    btn.addEventListener("click", async () => {
-      const code = pre.querySelector("code")?.textContent ?? pre.textContent ?? "";
-      await navigator.clipboard.writeText(code);
-      btn.innerHTML = CHECK_ICON;
-      btn.classList.add("copied");
-      setTimeout(() => {
-        btn.innerHTML = COPY_ICON;
-        btn.classList.remove("copied");
-      }, 1200);
+  previewEl
+    .querySelectorAll<HTMLPreElement>(
+      "pre:not(.diagram-source):not(.diagram-textart):not(.txt-block)",
+    )
+    .forEach((pre) => {
+      const lang = codeLangOf(pre);
+      if (lang) {
+        const tag = document.createElement("span");
+        tag.className = "code-lang";
+        tag.textContent = lang;
+        pre.appendChild(tag);
+      }
+      const btn = document.createElement("button");
+      btn.className = "copy-btn";
+      btn.type = "button";
+      btn.title = i18n("code.copy");
+      btn.innerHTML = COPY_ICON;
+      btn.addEventListener("click", async () => {
+        const code = pre.querySelector("code")?.textContent ?? pre.textContent ?? "";
+        await navigator.clipboard.writeText(code);
+        btn.innerHTML = CHECK_ICON;
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.innerHTML = COPY_ICON;
+          btn.classList.remove("copied");
+        }, 1200);
+      });
+      pre.appendChild(btn);
     });
-    pre.appendChild(btn);
-  });
 }
 
 // 折行切换图标
@@ -778,13 +1085,13 @@ tocToggleBtn.innerHTML = TOC_ICON;
 tocToggleBtn.addEventListener("click", () => {
   tocOpen = !tocOpen;
   localStorage.setItem(TOC_KEY, tocOpen ? "1" : "0");
-  applyMode();
+  keepReadingPos(applyMode); // 侧栏收展会改变正文宽度 → 折行变了，高度也跟着变
   updateTocActive();
 });
 window.addEventListener("storage", (e) => {
   if (e.key === TOC_KEY) {
     tocOpen = localStorage.getItem(TOC_KEY) !== "0";
-    applyMode();
+    keepReadingPos(applyMode);
     updateTocActive();
   }
 });
@@ -926,10 +1233,10 @@ function nthIndexOf(s: string, sub: string, n: number): number {
 // 否则只在内存里改、标「未保存」，等用户 ⌘S（文字编辑走这条）。
 async function applyDocEdit(next: string, persist = false) {
   if (!currentDoc) return;
-  const y = previewEl.scrollTop;
+  const anchor = captureAnchor();
   if (isEditMode) mdEditor!.setValue(next);
   await render(next, currentDoc.path);
-  previewEl.scrollTop = y;
+  keepAnchor(anchor);
   if (persist) {
     try {
       await invoke("write_file", { path: currentDoc.path, content: next });
@@ -1002,6 +1309,7 @@ async function openPath(path: string) {
   try {
     const content = await invoke<string>("read_file", { path });
     isEditMode = false;
+    editView = null; // 换文档：上一篇改到哪儿不再有意义
     savedMarkdown = content; // 刚读出的磁盘内容即「已保存」基准
     await render(content, path);
     updateEditUI();
@@ -1023,12 +1331,17 @@ previewEl.addEventListener("click", (e) => {
   }
 });
 
+// 认得的文件后缀。.txt 也走 Markdown 那条渲染管线——纯文本笔记里常常本来就写着
+// # 标题和 - 列表，按 Markdown 排出来更好读；目录、荧光笔、图表卡片也一并能用。
+const DOC_EXTENSIONS = ["md", "markdown", "mdown", "mkd", "txt"];
+const DOC_EXT_RE = new RegExp(`\\.(${DOC_EXTENSIONS.join("|")})$`, "i");
+
 // 弹出文件选择框
 async function pickAndOpen() {
   const selected = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: i18n("file.dialogName"), extensions: ["md", "markdown", "mdown", "mkd"] }],
+    filters: [{ name: i18n("file.dialogName"), extensions: DOC_EXTENSIONS }],
   });
   if (typeof selected === "string") {
     await openPath(selected);
@@ -1087,7 +1400,7 @@ getCurrentWebview().onDragDropEvent((event) => {
   } else if (type === "drop") {
     overlayEl.hidden = true;
     const file = event.payload.paths[0];
-    if (file && /\.(md|markdown|mdown|mkd)$/i.test(file)) {
+    if (file && DOC_EXT_RE.test(file)) {
       openPath(file);
     }
   } else {

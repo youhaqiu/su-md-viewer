@@ -367,6 +367,9 @@ const livePreviewPlugin = ViewPlugin.fromClass(
   { decorations: (value) => value.decorations },
 );
 
+// 编辑器的「读到哪儿」：滚动位置 + 光标处，用于阅读⇄编辑来回切时回到原处
+export type EditorViewState = { scrollTop: number; cursor: number };
+
 export interface MdEditor {
   getValue(): string;
   setValue(value: string): void;
@@ -374,6 +377,10 @@ export interface MdEditor {
   setDark(dark: boolean): void;
   setPlaceholder(text: string): void;
   refresh(): void;
+  getViewState(): EditorViewState;
+  setViewState(state: EditorViewState): void;
+  revealLine(line: number): void;
+  currentLine(): number;
 }
 
 function wrapSelection(view: EditorView, before: string, after = before): boolean {
@@ -439,6 +446,29 @@ export function createMdEditor(opts: {
     }),
   });
 
+  // ===== 焦点落地时别把画布拽回文档开头 =====
+  // WebKit 的行为：未聚焦的 contenteditable 被点中时，浏览器会先把「当前 DOM 选区」滚进视野。
+  // 编辑器刚打开时选区停在文档开头，于是「滚轮翻到中间 → 点一下要改的地方」整篇弹回顶部。
+  // 光标该落在哪儿 CodeMirror 自己算得准，这里只需在焦点落地的那一两帧把滚动位置按回原处。
+  view.scrollDOM.addEventListener(
+    "pointerdown",
+    () => {
+      if (view.hasFocus) return; // 已经聚焦就没有这一下，别插手正常的拖选滚动
+      const top = view.scrollDOM.scrollTop;
+      const left = view.scrollDOM.scrollLeft;
+      const restore = () => {
+        if (view.scrollDOM.scrollTop !== top) view.scrollDOM.scrollTop = top;
+        if (view.scrollDOM.scrollLeft !== left) view.scrollDOM.scrollLeft = left;
+      };
+      view.contentDOM.addEventListener("focus", restore, { once: true });
+      requestAnimationFrame(() => {
+        restore();
+        requestAnimationFrame(restore); // 焦点与浏览器滚动不一定同一帧落地
+      });
+    },
+    true,
+  );
+
   return {
     getValue: () => view.state.doc.toString(),
     setValue(value) {
@@ -456,5 +486,41 @@ export function createMdEditor(opts: {
       view.dispatch({ effects: placeholderComp.reconfigure(placeholder(text)) });
     },
     refresh: () => view.requestMeasure(),
+    getViewState: () => ({
+      scrollTop: view.scrollDOM.scrollTop,
+      cursor: view.state.selection.main.head,
+    }),
+    setViewState(state) {
+      const pos = Math.min(state.cursor, view.state.doc.length);
+      view.dispatch({ selection: EditorSelection.cursor(pos) }); // 不带 scrollIntoView，位置由下面这句定
+      view.scrollDOM.scrollTop = state.scrollTop;
+      // 刚灌完内容时高度还是估算值，可能夹不住目标位置；下一帧量准了再放一次
+      requestAnimationFrame(() => {
+        view.scrollDOM.scrollTop = state.scrollTop;
+      });
+    },
+    // 把某一行（1 基）顶到视野上沿，光标一并落过去——阅读位置带进编辑模式时用
+    revealLine(line) {
+      const n = Math.min(Math.max(Math.round(line), 1), view.state.doc.lines);
+      const { from } = view.state.doc.line(n);
+      view.dispatch({
+        selection: EditorSelection.cursor(from),
+        effects: EditorView.scrollIntoView(from, { y: "start", yMargin: 24 }),
+      });
+    },
+    // 编辑侧「正看着哪儿」（1 基行号）：光标还在视野里就以光标为准，否则取视野顶部那一行
+    currentLine() {
+      const rect = view.scrollDOM.getBoundingClientRect();
+      const head = view.state.selection.main.head;
+      const caret = view.coordsAtPos(head);
+      if (caret && caret.top >= rect.top && caret.bottom <= rect.bottom) {
+        return view.state.doc.lineAt(head).number;
+      }
+      const pos = view.posAtCoords(
+        { x: rect.left + rect.width / 2, y: rect.top + 12 },
+        false,
+      );
+      return view.state.doc.lineAt(pos).number;
+    },
   };
 }

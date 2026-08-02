@@ -14,16 +14,13 @@
       <span id="title">73</span>
       <div class="title-actions" data-tauri-drag-region="false">
         <div class="document-actions">
-          <button id="toc-toggle" type="button" title="目录" hidden></button>
           <button id="save-btn" type="button" title="保存" hidden></button>
           <button id="edit-toggle" type="button" title="编辑" hidden></button>
         </div>
         <div class="view-actions">
-          <button id="font-toggle" type="button" title="切换字体"></button>
-          <button id="palette-toggle" type="button" title="配色"></button>
-          <button id="theme-toggle" type="button" title="切换深色"></button>
+          <button id="appearance-toggle" type="button" title="外观"></button>
         </div>
-        <div id="palette-menu" class="palette-menu" role="menu" hidden></div>
+        <div id="appearance-menu" class="appearance-menu" role="menu" hidden></div>
       </div>
     </header>
 
@@ -36,6 +33,10 @@
       </aside>
 
       <div id="main">
+        <!-- 目录开关：浮在正文左上角，紧挨着它要拉出来的那条侧栏（放在标题栏右侧时，
+             按钮在右、栏在左，手要横穿整个窗口） -->
+        <button id="toc-toggle" class="toc-fab" type="button" title="目录" hidden></button>
+
         <!-- 未打开文件时：品牌占位页 -->
         <div id="empty" class="empty">
           <svg class="brand-mark" width="104" height="104" viewBox="0 0 112 112" xmlns="http://www.w3.org/2000/svg">

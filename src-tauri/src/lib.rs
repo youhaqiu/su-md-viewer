@@ -33,6 +33,15 @@ fn write_file(path: String, content: String) -> Result<(), String> {
     fs::write(&path, content).map_err(|e| format!("{e}"))
 }
 
+// 把 base64 编码的二进制内容写到指定路径（图表导出 PNG 用）。
+#[tauri::command]
+fn write_file_base64(path: String, data: String) -> Result<(), String> {
+    let bytes = general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| format!("{e}"))?;
+    fs::write(&path, bytes).map_err(|e| format!("{e}"))
+}
+
 // 读取本地图片并编码成 data URL，前端直接当 img.src 用，绕开资源协议/scope。
 #[tauri::command]
 fn read_image_data_url(path: String) -> Result<String, String> {
@@ -239,6 +248,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
+            write_file_base64,
             read_image_data_url,
             get_initial_file,
             set_locale_menu
