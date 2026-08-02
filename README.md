@@ -19,7 +19,8 @@ English · [简体中文](./README.zh-CN.md)
 
 ## Features
 
-- 📖 **Open and read** — set it as the default app for `.md`; double-click goes straight to the content. `.txt` opens too (typeset as Markdown). One file, one window.
+- 📖 **Open and read** — set it as the default app for `.md`; double-click goes straight to the content. One file, one window.
+- 📄 **Plain text, properly** — `.txt` goes through the same pipeline, so `#` headings and `-` lists still typeset — while the file's own layout survives: ASCII art and space-aligned tables stay monospaced and intact (the former may even be recognized as a diagram card), and indented paragraphs keep their indentation.
 - 🗂️ **Outline sidebar** — a collapsible heading tree; click to jump, and it highlights the section you're reading. Off by default, one tap to open.
 - ✏️ **Live typeset editing** — press `⌘E` for a Typora-like single-canvas editor: headings, emphasis, links, quotes, and code render as you type, while Markdown markers reveal themselves on the active line. Press `⌘S` to save in place.
 - 🖍️ **Highlighter** — select text in the reader to highlight it in one of four colors; it's written back as `==` / `<mark>` and saved to the file.
@@ -28,7 +29,8 @@ English · [简体中文](./README.zh-CN.md)
 - 🔀 **Diagrams, all of them** — Mermaid, flowchart.js `flow` syntax, and hand-drawn ASCII / box-drawing art all render into the same card, drawn in a **hand-sketched style** (wobbly strokes, hachure fill, handwriting labels). Five styles in the toolbar: hand-drawn, clean, neon glow, gradient glass, and cyber circuit — plus a Colorful switch that works with any of them, giving each node its own hue starting from your accent color. Drag nodes to rearrange, zoom and pan, flip to the source, export SVG / PNG, colors follow your theme. Untagged code blocks are auto-detected, so old documents need no edits.
 - 🖼️ **Images & zoom** — local images load inline; click to zoom.
 - 📊 **Tables** — CJK text doesn't break mid-word; toggle between fit-to-width and horizontal scroll.
-- 🌗 **Themes** — dark mode (follows the system, or manual), four accent colors, and a sans ⇄ serif reading font.
+- 🌗 **Appearance** — one popover in the title bar holds all three: theme (system / light / dark), four accent colors, and a sans ⇄ serif reading font.
+- 📍 **Your place is kept** — switching theme, accent, font, or language, and toggling the outline, all leave you where you were reading instead of snapping to the top; `⌘E` in and out of edit mode lands on the same paragraph.
 - 🧼 **Tidy rendering** — YAML frontmatter folds into a compact card; presentational `<font>` tags from rich-text exports (e.g. Yuque) are stripped for clean reading.
 - 🌐 **Bilingual (中 / EN)** — the UI follows your system language and switches from the native menu (**View → Language**).
 - 🪟 **Out of the way** — custom centered title bar and a word count in the status bar. Closing a window really closes it (you're asked first if there are unsaved changes); closing the last one quits the app.
