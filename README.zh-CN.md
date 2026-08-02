@@ -63,7 +63,7 @@
 
 ### macOS
 
-从 [Releases](../../releases) 下载 `Sū_x.x.x_universal.dmg`（同时支持 Intel 与 Apple Silicon），拖入「应用程序」。
+从 [Releases](../../releases) 下载 `Su_x.x.x_universal.dmg`（同时支持 Intel 与 Apple Silicon），拖入「应用程序」。
 
 > 应用未经 Apple 签名，首次打开请**右键 →「打开」**绕过 Gatekeeper。
 

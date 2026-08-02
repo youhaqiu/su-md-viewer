@@ -63,7 +63,7 @@ English · [简体中文](./README.zh-CN.md)
 
 ### macOS
 
-Download `Sū_x.x.x_universal.dmg` from [Releases](../../releases) (works on both Intel and Apple Silicon) and drag it into Applications.
+Download `Su_x.x.x_universal.dmg` from [Releases](../../releases) (works on both Intel and Apple Silicon) and drag it into Applications.
 
 > The app isn't notarized by Apple. On first launch, **right-click → Open** to get past Gatekeeper.
 
