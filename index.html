@@ -5,6 +5,20 @@
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sū</title>
+    <!-- 主题要在首屏之前定下来：main.ts 是 defer 的，等它跑完再打 data-theme，
+         中间那一帧会按系统配色渲染，深浅不一致时正文会闪一下另一套颜色。 -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("theme");
+          if (t !== "light" && t !== "dark")
+            t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          var r = document.documentElement;
+          r.setAttribute("data-theme", t);
+          r.setAttribute("data-color-mode", t);
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
