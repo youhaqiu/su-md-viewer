@@ -432,7 +432,7 @@ body {
 /* ===== 外观浮层：深浅 / 主题色 / 正文字体 ===== */
 .appearance-menu {
   position: absolute;
-  top: 38px;
+  top: 100%; /* 紧贴标题栏下沿（.title-actions 高度 = 标题栏高度），不随标题栏高度变化脱节 */
   right: 8px;
   z-index: 60;
   width: 218px;
@@ -1414,9 +1414,9 @@ body {
   height: 44px;
   padding: 0 220px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--canvas) 94%, transparent);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  background: var(--canvas); /* 不能有 backdrop-filter：它会让标题栏成为层叠上下文，
+     把外观菜单的 z-index 困在里面，被正文区盖住；而且标题栏在文档流顶部，
+     没有内容会滚到它下面，blur 本来就没有视觉效果 */
 }
 
 #title {
