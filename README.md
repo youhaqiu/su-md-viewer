@@ -18,7 +18,7 @@ English · [简体中文](./README.zh-CN.md)
 **Sū** (素 — "plain, unadorned") is a desktop app for **reading** Markdown. Double-click a `.md` file and you're straight into the text — no file tree, no crowded panels, no clutter. Just your document, quietly typeset. Spot a typo? Hit `⌘E` to fix it in place.
 
 <p align="center">
-  <img src="./docs/screenshot-read.png" alt="Reading a Markdown file in Sū" width="820" />
+  <img src="https://cdn.jsdelivr.net/gh/youhaqiu/su-md-viewer@master/docs/screenshot-read.png" alt="Reading a Markdown file in Sū" width="820" />
 </p>
 
 ## Features
@@ -44,19 +44,19 @@ English · [简体中文](./README.zh-CN.md)
 **`⌘E` — edit in place.** Markdown markers appear on the line the cursor is on; everything else stays typeset.
 
 <p align="center">
-  <img src="./docs/screenshot-edit.png" alt="Live typeset editing" width="820" />
+  <img src="https://cdn.jsdelivr.net/gh/youhaqiu/su-md-viewer@master/docs/screenshot-edit.png" alt="Live typeset editing" width="820" />
 </p>
 
 **Dark mode**, math, and hand-drawn ASCII, on the same page.
 
 <p align="center">
-  <img src="./docs/screenshot-dark.png" alt="Dark mode with math and an ASCII diagram" width="820" />
+  <img src="https://cdn.jsdelivr.net/gh/youhaqiu/su-md-viewer@master/docs/screenshot-dark.png" alt="Dark mode with math and an ASCII diagram" width="820" />
 </p>
 
 **Five diagram styles**, one switch in the card toolbar — the same Mermaid / `flow` / ASCII source, drawn five ways.
 
 <p align="center">
-  <img src="./docs/diagram-styles.png" alt="Hand-drawn, clean, neon glow, gradient glass and cyber circuit diagram styles" width="900" />
+  <img src="https://cdn.jsdelivr.net/gh/youhaqiu/su-md-viewer@master/docs/diagram-styles.png" alt="Hand-drawn, clean, neon glow, gradient glass and cyber circuit diagram styles" width="900" />
 </p>
 
 ## Install

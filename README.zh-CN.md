@@ -18,7 +18,7 @@
 「Sū（素）」是一个**专心看 Markdown 的桌面应用**。双击 `.md` 文件直接进入阅读，没有文件树、没有满屏面板、没有多余按钮——把文档安安静静地排好版给你看。看到错字想改？按 `⌘E` 就地修一笔。
 
 <p align="center">
-  <img src="./docs/screenshot-read.zh.png" alt="用 Sū 阅读 Markdown" width="820" />
+  <img src="https://cdn.jsdelivr.net/gh/youhaqiu/su-md-viewer@master/docs/screenshot-read.zh.png" alt="用 Sū 阅读 Markdown" width="820" />
 </p>
 
 ## 特性
@@ -44,19 +44,19 @@
 **`⌘E` 就地改**：光标所在行显示 Markdown 标记，其余部分保持排版。
 
 <p align="center">
-  <img src="./docs/screenshot-edit.png" alt="实时排版编辑" width="820" />
+  <img src="https://cdn.jsdelivr.net/gh/youhaqiu/su-md-viewer@master/docs/screenshot-edit.png" alt="实时排版编辑" width="820" />
 </p>
 
 **深色模式**下的表格、公式与手绘 ASCII 图，同在一页。
 
 <p align="center">
-  <img src="./docs/screenshot-dark.png" alt="深色模式下的公式与 ASCII 图" width="820" />
+  <img src="https://cdn.jsdelivr.net/gh/youhaqiu/su-md-viewer@master/docs/screenshot-dark.png" alt="深色模式下的公式与 ASCII 图" width="820" />
 </p>
 
 **五种图表风格**，卡片工具条上一键切换——同一份 Mermaid / `flow` / ASCII 源码，五种画法。
 
 <p align="center">
-  <img src="./docs/diagram-styles.zh.png" alt="手绘、规整、霓虹、渐变玻璃与赛博电路五种图表风格" width="900" />
+  <img src="https://cdn.jsdelivr.net/gh/youhaqiu/su-md-viewer@master/docs/diagram-styles.zh.png" alt="手绘、规整、霓虹、渐变玻璃与赛博电路五种图表风格" width="900" />
 </p>
 
 ## 安装
