@@ -1455,6 +1455,7 @@ body[data-mode="edit"] .document-actions {
 
 #titlebar :is(
     #save-btn,
+    #image-btn,
     #edit-toggle,
     #appearance-toggle
   ) {
@@ -1475,6 +1476,7 @@ body[data-mode="edit"] .document-actions {
 
 #titlebar :is(
     #save-btn,
+    #image-btn,
     #edit-toggle,
     #appearance-toggle
   ):hover {
@@ -1756,6 +1758,7 @@ html[data-theme="dark"] #titlebar {
 html[data-theme="dark"] #title,
 html[data-theme="dark"] #titlebar :is(
     #save-btn,
+    #image-btn,
     #edit-toggle,
     #appearance-toggle
   ) {

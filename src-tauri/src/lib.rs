@@ -61,6 +61,64 @@ fn read_image_data_url(path: String) -> Result<String, String> {
     Ok(format!("data:{mime};base64,{b64}"))
 }
 
+// 把一张图片存进文档同目录的 assets/（默认图片目录），返回写进 Markdown 的相对路径。
+// name_hint：挑选本地文件时传原文件名；剪贴板粘贴时传 None，用时间戳生成。
+#[tauri::command]
+fn save_image(doc_path: String, name_hint: Option<String>, data: String) -> Result<String, String> {
+    let bytes = general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| format!("{e}"))?;
+    let doc_dir = std::path::Path::new(&doc_path)
+        .parent()
+        .ok_or_else(|| "文档路径没有父目录".to_string())?;
+    let assets = doc_dir.join("assets");
+    fs::create_dir_all(&assets).map_err(|e| format!("{e}"))?;
+
+    // 文件名：只取名字部分（防路径穿越），空白转成 -，避免 Markdown 图片语法被空格截断
+    let base = match name_hint.as_deref() {
+        Some(hint) => {
+            let name = std::path::Path::new(hint)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let cleaned: String = name
+                .chars()
+                .map(|c| if c.is_whitespace() { '-' } else { c })
+                .collect();
+            if cleaned.is_empty() {
+                default_image_name()
+            } else {
+                cleaned
+            }
+        }
+        None => default_image_name(),
+    };
+
+    // 重名不覆盖：xxx.png → xxx-1.png → xxx-2.png …
+    let (stem, ext) = match base.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
+        _ => (base.clone(), String::new()),
+    };
+    let mut candidate = base;
+    for i in 1..1000 {
+        if !assets.join(&candidate).exists() {
+            break;
+        }
+        candidate = format!("{stem}-{i}{ext}");
+    }
+
+    fs::write(assets.join(&candidate), bytes).map_err(|e| format!("{e}"))?;
+    Ok(format!("assets/{candidate}"))
+}
+
+fn default_image_name() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("img-{nanos}.png")
+}
+
 // 前端启动时调用：取走当前窗口要打开的文件（文档窗口查 files 表，主窗口查 pending）。
 #[tauri::command]
 fn get_initial_file(window: tauri::WebviewWindow, state: State<AppState>) -> Option<String> {
@@ -250,6 +308,7 @@ pub fn run() {
             write_file,
             write_file_base64,
             read_image_data_url,
+            save_image,
             get_initial_file,
             set_locale_menu
         ])

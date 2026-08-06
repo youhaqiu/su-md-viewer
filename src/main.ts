@@ -463,6 +463,7 @@ let currentDoc: { markdown: string; path: string } | null = null;
 // ===== 编辑模式：阅读 ⇄ 单画布实时排版编辑，手动保存（⌘S）=====
 const editToggleBtn = document.querySelector<HTMLButtonElement>("#edit-toggle")!;
 const saveBtn = document.querySelector<HTMLButtonElement>("#save-btn")!;
+const imageBtn = document.querySelector<HTMLButtonElement>("#image-btn")!;
 const editorEl = document.querySelector<HTMLDivElement>("#editor")!;
 const editStatusEl = document.querySelector<HTMLElement>("#edit-status")!;
 const liveLabelEl = document.querySelector<HTMLSpanElement>("#live-label")!;
@@ -477,6 +478,7 @@ mdEditor = createMdEditor({
     if (currentDoc && isEditMode) currentDoc.markdown = value;
     updateEditUI();
   },
+  onImagePaste: (files) => insertImages(files.map((file) => ({ file }))),
 });
 
 let isEditMode = false;
@@ -499,6 +501,8 @@ const PENCIL_ICON = `<svg ${ICON_ATTRS}><path d="M4.4 19.6l4.1-1.1L19 8a2 2 0 0 
 const EYE_ICON = `<svg ${ICON_ATTRS}><path d="M2.6 12S6 5.9 12 5.9 21.4 12 21.4 12 18 18.1 12 18.1 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.9"/></svg>`;
 const SAVE_ICON = `<svg ${ICON_ATTRS}><path d="M18.6 20.5H5.4a1.9 1.9 0 0 1-1.9-1.9V5.4a1.9 1.9 0 0 1 1.9-1.9h9.7l5.4 5.4v9.7a1.9 1.9 0 0 1-1.9 1.9z"/><path d="M16.4 20.5v-6.9H7.6v6.9M7.6 3.5v4.3h6.1"/></svg>`;
 const SAVED_ICON = `<svg ${ICON_ATTRS}><path d="M5.4 12.4l4.2 4.2 9-9"/></svg>`;
+// 图片：相框 + 山与太阳，编辑器里「插入图片」按钮用
+const IMAGE_ICON = `<svg ${ICON_ATTRS}><rect x="3.2" y="4.8" width="17.6" height="14.4" rx="2.4"/><circle cx="9" cy="10" r="1.6"/><path d="M4.6 17.2l4.2-4.2a1.6 1.6 0 0 1 2.3 0l3.4 3.4M13.2 15.6l1.9-1.9a1.6 1.6 0 0 1 2.3 0l2.9 2.9"/></svg>`;
 
 // 当前生效的文本：编辑时以编辑器为准，预览时以已渲染文档为准
 function currentText(): string {
@@ -518,6 +522,7 @@ function applyMode() {
   editStatusEl.hidden = !hasDoc; // 底部状态栏（字数）阅读/编辑模式都显示
   editToggleBtn.hidden = !hasDoc;
   saveBtn.hidden = !hasDoc || (!isEditMode && !isDirty());
+  imageBtn.hidden = !hasDoc || !isEditMode;
   // 目录：仅在阅读模式、有文档且文档含标题时可用；是否展开由 tocOpen 决定
   const tocShow = hasDoc && !isEditMode && hasToc && tocOpen;
   tocToggleBtn.hidden = !hasDoc || isEditMode || !hasToc;
@@ -531,6 +536,8 @@ function updateEditUI() {
   editToggleBtn.innerHTML = isEditMode ? EYE_ICON : PENCIL_ICON;
   editToggleBtn.title = isEditMode ? i18n("edit.toPreview") : i18n("edit.toEdit");
   editToggleBtn.setAttribute("aria-pressed", String(isEditMode));
+  imageBtn.innerHTML = IMAGE_ICON;
+  imageBtn.title = i18n("edit.insertImage");
   if (!saveBtn.classList.contains("saved")) saveBtn.innerHTML = SAVE_ICON;
   const dirty = isDirty();
   saveBtn.title = i18n("edit.save");
@@ -625,6 +632,64 @@ function flashSaved() {
     saveBtn.classList.remove("saved");
   }, 1200);
 }
+
+// ===== 插入图片：存到文档同目录的 assets/（默认图片目录），光标处插入相对路径 =====
+// 两个入口共用这一套：编辑器里粘贴剪贴板图片（onImagePaste），或标题栏按钮挑本地文件。
+type ImageInput = { file: File } | { path: string };
+
+function fileToBase64(file: File): Promise<string> {
+  return file.arrayBuffer().then((buf) => {
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
+  });
+}
+
+async function insertImages(inputs: ImageInput[]) {
+  if (!currentDoc || !isEditMode) return;
+  for (const input of inputs) {
+    try {
+      let data: string;
+      let nameHint: string | null = null;
+      if ("file" in input) {
+        data = await fileToBase64(input.file);
+        // 剪贴板给的文件名（image.png）没有保留价值，交给后端按时间戳起名
+        nameHint = input.file.name && input.file.name !== "image.png" ? input.file.name : null;
+      } else {
+        // 磁盘上的文件：读出内容（复用 read_image_data_url，剥掉 data URL 前缀即 base64）
+        const dataUrl = await invoke<string>("read_image_data_url", { path: input.path });
+        data = dataUrl.slice(dataUrl.indexOf(",") + 1);
+        nameHint = input.path.split("/").pop() ?? null;
+      }
+      const rel = await invoke<string>("save_image", {
+        docPath: currentDoc.path,
+        nameHint,
+        data,
+      });
+      mdEditor!.insertAtCursor(`![](${rel})`);
+    } catch (err) {
+      showToast(i18n("img.insertFailed", { err: String(err) }));
+    }
+  }
+}
+
+// 「插入图片」按钮：系统文件选择器挑本地图片，多选
+imageBtn.addEventListener("click", async () => {
+  if (!currentDoc || !isEditMode) return;
+  const picked = await open({
+    multiple: true,
+    filters: [
+      {
+        name: i18n("file.imageDialogName"),
+        extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"],
+      },
+    ],
+  });
+  if (!picked) return;
+  const paths = Array.isArray(picked) ? picked : [picked];
+  insertImages(paths.map((path) => ({ path })));
+});
 
 // 有未保存修改时弹窗确认是否放弃（切换文件 / 关窗口前调用）
 async function confirmDiscardIfDirty(): Promise<boolean> {

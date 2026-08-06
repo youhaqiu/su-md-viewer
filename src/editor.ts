@@ -373,6 +373,7 @@ export type EditorViewState = { scrollTop: number; cursor: number };
 export interface MdEditor {
   getValue(): string;
   setValue(value: string): void;
+  insertAtCursor(text: string): void;
   focus(): void;
   setDark(dark: boolean): void;
   setPlaceholder(text: string): void;
@@ -404,6 +405,8 @@ export function createMdEditor(opts: {
   dark: boolean;
   onChange: (value: string) => void;
   placeholder: string;
+  // 剪贴板里贴入图片时回调（图片已被拦下，不会变成乱码文本）；由外层负责存盘与插入链接
+  onImagePaste?: (files: File[]) => void;
 }): MdEditor {
   const themeComp = new Compartment();
   const placeholderComp = new Compartment();
@@ -424,6 +427,22 @@ export function createMdEditor(opts: {
           autocapitalize: "sentences",
         }),
         markdown({ base: markdownLanguage, codeLanguages: languages }),
+        EditorView.domEventHandlers({
+          paste(event) {
+            const items = event.clipboardData?.items;
+            if (!items) return;
+            const images: File[] = [];
+            for (const item of items) {
+              if (item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (file) images.push(file);
+              }
+            }
+            if (!images.length) return; // 纯文本粘贴不插手
+            event.preventDefault();
+            opts.onImagePaste?.(images);
+          },
+        }),
         baseTheme,
         themeComp.of(themeFor(opts.dark)),
         livePreviewPlugin,
@@ -477,6 +496,15 @@ export function createMdEditor(opts: {
         changes: { from: 0, to: view.state.doc.length, insert: value },
       });
       programmatic = false;
+    },
+    // 在主选区插入文本（插图片链接用），光标落到插入内容之后
+    insertAtCursor(text) {
+      const range = view.state.selection.main;
+      view.dispatch({
+        changes: { from: range.from, to: range.to, insert: text },
+        selection: EditorSelection.cursor(range.from + text.length),
+      });
+      view.focus();
     },
     focus: () => view.focus(),
     setDark(dark) {
