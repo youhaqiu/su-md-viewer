@@ -328,6 +328,7 @@ function setThemeChoice(c: ThemeChoice) {
   if (c === "system") localStorage.removeItem(THEME_KEY);
   else localStorage.setItem(THEME_KEY, c);
   applyTheme();
+  syncMenuLocale();
 }
 
 function applyTheme() {
@@ -364,6 +365,7 @@ function effectiveFont(): FontId {
 function setFont(f: FontId) {
   localStorage.setItem(FONT_KEY, f);
   applyFont();
+  syncMenuLocale();
 }
 
 function applyFont() {
@@ -398,6 +400,7 @@ function effectiveAccent(): AccentId {
 function setAccent(a: AccentId) {
   localStorage.setItem(ACCENT_KEY, a);
   applyAccent();
+  syncMenuLocale();
 }
 
 function applyAccent() {
@@ -834,13 +837,35 @@ function applyI18n() {
   }
 }
 
+// 原生菜单跟着语言与外观走：「视图 → 外观」的文案和勾选态从这里传过去，与外观浮层同一份 i18n
 async function syncMenuLocale() {
+  const item = (id: string, label: string, checked: boolean) => ({ id, label, checked });
+  const theme = themeChoice();
+  const accent = effectiveAccent();
+  const font = effectiveFont();
+  const appearance = {
+    title: i18n("appearance.title"),
+    groups: [
+      (["system", "light", "dark"] as const).map((t) => item(`theme:${t}`, i18n(`appearance.${t}`), theme === t)),
+      ACCENTS.map(({ id }) => item(`accent:${id}`, i18n(`accent.${id}`), accent === id)),
+      (["sans", "serif"] as const).map((f) => item(`font:${f}`, i18n(`font.${f}`), font === f)),
+    ],
+  };
   try {
-    await invoke("set_locale_menu", { lang: getLocale() });
+    await invoke("set_locale_menu", { lang: getLocale(), appearance });
   } catch {
     /* 菜单同步失败不影响使用 */
   }
 }
+
+// 「视图 → 外观」菜单：payload 形如 "theme:dark" / "accent:teal" / "font:serif"。
+// 菜单只发给当前窗口；它改的是 localStorage，其他窗口经 storage 事件自动跟上。
+listen<string>("menu-appearance", (e) => {
+  const [kind, value] = e.payload.split(":");
+  if (kind === "theme" && (value === "system" || value === "light" || value === "dark")) setThemeChoice(value);
+  else if (kind === "accent" && ACCENTS.some((a) => a.id === value)) setAccent(value as AccentId);
+  else if (kind === "font" && (value === "sans" || value === "serif")) setFont(value);
+});
 
 // 语言改由原生「视图 → 语言」菜单切换：菜单项触发时广播到所有窗口，各窗口在此响应
 listen<string>("menu-set-lang", (e) => {

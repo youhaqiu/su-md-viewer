@@ -133,9 +133,24 @@ fn get_initial_file(window: tauri::WebviewWindow, state: State<AppState>) -> Opt
 // 关键：macOS 预置项（关于/隐藏/退出/拷贝…）若用便捷方法会跟随「系统」语言，
 // 导致切到另一种语言时菜单中英混杂；这里一律用 PredefinedMenuItem 显式传本地化文案，
 // 让整份菜单都跟应用内的中/EN 切换走。
+// 「视图 → 外观」子菜单：文案与勾选态都由前端传来（和外观浮层同一份 i18n，不在这里再翻一遍）。
+// 每组是一套单选（深浅 / 主题色 / 正文字体），组间用分隔线隔开；菜单项 id 形如 "ap:theme:dark"。
+#[derive(serde::Deserialize, Clone)]
+struct AppearanceItem {
+    id: String,
+    label: String,
+    checked: bool,
+}
+#[derive(serde::Deserialize, Clone)]
+struct AppearanceMenu {
+    title: String,
+    groups: Vec<Vec<AppearanceItem>>,
+}
+
 fn build_app_menu<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     zh: bool,
+    appearance: Option<&AppearanceMenu>,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::PredefinedMenuItem as P;
 
@@ -222,7 +237,23 @@ fn build_app_menu<R: tauri::Runtime>(
         .item(&lang_zh_item)
         .item(&lang_en_item)
         .build()?;
-    let view_menu = SubmenuBuilder::new(app, view_t).item(&language_menu).build()?;
+    let mut view_menu = SubmenuBuilder::new(app, view_t);
+    if let Some(ap) = appearance {
+        let mut sub = SubmenuBuilder::new(app, &ap.title);
+        for (i, group) in ap.groups.iter().enumerate() {
+            if i > 0 {
+                sub = sub.separator();
+            }
+            for it in group {
+                let item = CheckMenuItemBuilder::with_id(format!("ap:{}", it.id), &it.label)
+                    .checked(it.checked)
+                    .build(app)?;
+                sub = sub.item(&item);
+            }
+        }
+        view_menu = view_menu.item(&sub.build()?);
+    }
+    let view_menu = view_menu.item(&language_menu).build()?;
 
     let window_menu = SubmenuBuilder::new(app, window_t)
         .item(&P::minimize(app, Some(minimize_l))?)
@@ -235,16 +266,29 @@ fn build_app_menu<R: tauri::Runtime>(
         .build()
 }
 
-// 前端切换语言时调用：在主线程上按新语言重建并替换菜单。
+// 前端切换语言 / 外观时调用：在主线程上按新语言与外观勾选态重建并替换菜单。
 #[tauri::command]
-fn set_locale_menu(app: tauri::AppHandle, lang: String) {
+fn set_locale_menu(app: tauri::AppHandle, lang: String, appearance: Option<AppearanceMenu>) {
     let zh = lang.to_lowercase().starts_with("zh");
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Ok(menu) = build_app_menu(&handle, zh) {
+        if let Ok(menu) = build_app_menu(&handle, zh, appearance.as_ref()) {
             let _ = handle.set_menu(menu);
         }
     });
+}
+
+// 菜单动作交给「当前窗口」：聚焦的那个；都没聚焦（比如刚从关于面板回来）就找主窗口
+fn emit_to_active(app: &tauri::AppHandle, event: &str, payload: String) {
+    let windows = app.webview_windows();
+    let target = windows
+        .values()
+        .find(|w| w.is_focused().unwrap_or(false))
+        .or_else(|| windows.get("main"))
+        .or_else(|| windows.values().next());
+    if let Some(w) = target {
+        let _ = w.emit(event, payload);
+    }
 }
 
 // Windows / Linux：文件通过命令行参数传入。从 argv 里挑出存在的文件并打开。
@@ -322,7 +366,7 @@ pub fn run() {
             let zh = sys_locale::get_locale()
                 .map(|l| l.to_lowercase().starts_with("zh"))
                 .unwrap_or(false);
-            let menu = build_app_menu(app.handle(), zh)?;
+            let menu = build_app_menu(app.handle(), zh, None)?;
             app.set_menu(menu)?;
 
             // 冷启动时若由命令行/文件关联带入文件（Windows/Linux），在此打开。
@@ -348,17 +392,11 @@ pub fn run() {
                         let _ = w.emit("menu-open", ());
                     }
                 }
-                // 手动检查更新：交给聚焦的窗口去查并弹结果；都没聚焦（比如刚从关于面板回来）就找主窗口
-                "check-update" => {
-                    let windows = app.webview_windows();
-                    let target = windows
-                        .values()
-                        .find(|w| w.is_focused().unwrap_or(false))
-                        .or_else(|| windows.get("main"))
-                        .or_else(|| windows.values().next());
-                    if let Some(w) = target {
-                        let _ = w.emit("menu-check-update", ());
-                    }
+                // 手动检查更新：交给聚焦的窗口去查并弹结果
+                "check-update" => emit_to_active(app, "menu-check-update", String::new()),
+                // 外观：交给一个窗口去改设置，其他窗口经 localStorage 的 storage 事件自动跟上
+                id if id.starts_with("ap:") => {
+                    emit_to_active(app, "menu-appearance", id["ap:".len()..].to_string())
                 }
                 // 语言切换：广播给所有窗口，让整个应用（含各文档窗口）统一切换语言
                 id @ ("lang-zh" | "lang-en") => {
