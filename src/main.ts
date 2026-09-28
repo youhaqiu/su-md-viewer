@@ -104,7 +104,51 @@ const katexBlock: TokenizerAndRendererExtension = {
   },
 };
 
-marked.use({ extensions: [katexBlock, katexInline] });
+// ===== LaTeX 原生定界符：\( … \) 行内、\[ … \] 块级 =====
+// ChatGPT / 论文草稿导出的 Markdown 大量用这套写法。不单独处理的话 Markdown 会把 \[ 当成
+// 「转义的 [」，公式原样漏出来（显示成 [ I=(S,M,\Gamma) ]）。规则同 $ 版：可跨单个换行，遇空行即停。
+const LATEX_INLINE_RE = /^\\([([])((?:[^\n]|\n(?!\s*\n))+?)\\([)\]])/;
+// 块级：\[ 与 \] 各占一行，中间可含空行
+const LATEX_BLOCK_RE = /^ {0,3}\\\[[ \t]*\n([^]+?)\n[ \t]*\\\][ \t]*(?:\n|$)/;
+const LATEX_PAIR: Record<string, string> = { "(": ")", "[": "]" };
+
+const latexInline: TokenizerAndRendererExtension = {
+  name: "latexInline",
+  level: "inline",
+  start(src) {
+    const m = /\\[([]/.exec(src);
+    return m ? m.index : undefined;
+  },
+  tokenizer(src) {
+    const m = LATEX_INLINE_RE.exec(src);
+    if (!m || LATEX_PAIR[m[1]] !== m[3] || !m[2].trim()) return undefined;
+    // \[链接\] 这种是在转义方括号，不是公式：有中日韩文字又没有任何 \ 命令时放过
+    if (/[぀-ヿ㐀-鿿가-힯]/.test(m[2]) && !m[2].includes("\\")) return undefined;
+    return { type: "latexInline", raw: m[0], text: m[2].trim(), displayMode: m[1] === "[" };
+  },
+  renderer(token) {
+    return renderKatex(token.text ?? "", Boolean((token as { displayMode?: boolean }).displayMode));
+  },
+};
+
+const latexBlock: TokenizerAndRendererExtension = {
+  name: "latexBlock",
+  level: "block",
+  start(src) {
+    const m = /(?:^|\n) {0,3}\\\[[ \t]*\n/.exec(src);
+    return m ? m.index + (m[0].startsWith("\n") ? 1 : 0) : undefined;
+  },
+  tokenizer(src) {
+    const m = LATEX_BLOCK_RE.exec(src);
+    if (!m || !m[1].trim()) return undefined;
+    return { type: "latexBlock", raw: m[0], text: m[1].trim() };
+  },
+  renderer(token) {
+    return renderKatex(token.text ?? "", true) + "\n";
+  },
+};
+
+marked.use({ extensions: [katexBlock, latexBlock, katexInline, latexInline] });
 
 // 荧光笔：把 ==高亮文字== 渲染成 <mark>（黄色），与 Obsidian / Typora 同款语法
 const highlightExtension: TokenizerAndRendererExtension = {
