@@ -1042,10 +1042,31 @@ html[data-font="serif"] {
   opacity: 1;
 }
 
-/* 文献引用 [35]：主题色、无下划线，和正文区分开又不抢眼；条目编号收成淡色小标签 */
+/* 公式：KaTeX 默认把公式放大到 1.21em，夹在中文正文里比汉字大一圈，∑ 这类大算符还会
+   把整行撑开。行内压回接近正文字号，块级略大一点；行高交给正文，不让公式撑行。 */
+.markdown-body .katex {
+  font-size: 1.05em;
+  line-height: normal;
+}
+.markdown-body .katex-display > .katex {
+  font-size: 1.15em;
+}
+.markdown-body .katex-display {
+  margin: 0.8em 0;
+  overflow-x: auto; /* 长公式在窄窗口里横向滚动，不撑破版面 */
+  overflow-y: hidden;
+}
+
+/* 文献引用 [35]：主题色上标，和正文区分开又不抢眼；参考文献里的条目编号不上标 */
 .markdown-body .cite {
   color: var(--accent);
   white-space: nowrap;
+}
+.markdown-body .cite:not(.cite-def) {
+  font-size: 0.72em;
+  vertical-align: super;
+  line-height: 0; /* 上标不撑高行距 */
+  margin: 0 0.05em;
 }
 .markdown-body a.cite-ref {
   color: inherit;
