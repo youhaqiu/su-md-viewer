@@ -53,7 +53,10 @@ export function looksLikeAscii(code: string): boolean {
 //     ▼
 //   规则匹配器（优先）
 //
+// 箭头既认 Unicode（▼ →），也认 ASCII 写法：-> / --> / <- ，以及单独成词的 v ^（竖向箭头）。
 // 判据刻意偏严：tree 输出、shell 会话里也有 │ └──，但没有箭头，在这里被挡掉。
+const U_ARROW = /[▼▾↓↑←→◀▶▸◂➜➤]/;
+const ASCII_ARROW = /-+>|<-+|(?:^|\s)[v^](?=\s|$)/;
 export function looksLikeBareFlow(code: string): boolean {
   const lines = code
     .replace(/\r\n?/g, "\n")
@@ -61,18 +64,27 @@ export function looksLikeBareFlow(code: string): boolean {
     .filter((l) => l.trim());
   if (lines.length < 3) return false;
 
-  const arrowLines = lines.filter((l) => /[▼▾↓↑←→◀▶▸◂➜➤]/.test(l)).length;
+  const arrowLines = lines.filter((l) => U_ARROW.test(l) || ASCII_ARROW.test(l)).length;
   if (arrowLines < 2) return false;
-  const wireLines = lines.filter((l) => /[│┃║|─━└┕├┝┌┍┐┑┘┙]/.test(l)).length;
+  // 连线：框线字符、竖线 |，或 --> 里那种连着的 -
+  const wireLines = lines.filter((l) => /[│┃║|─━└┕├┝┌┍┐┑┘┙]|--/.test(l)).length;
   if (wireLines < 1) return false;
-  // 数「文字段」而不是文字行：横向图一行就有好几个节点（读取配置 → 解析参数 → 校验输入）
+  // 数「文字段」而不是文字行：横向图一行就有好几个节点（读取配置 → 解析参数 → 校验输入）。
+  // 单独成词的 v ^ 是箭头，先抹掉，别被当成文字
   const textSegs = lines
-    .flatMap((l) => l.split(/[│┃║|─━═┌┍┐┑└┕┘┙├┝┤┥┬┯┴┷┼╋▼▾↓↑←→◀▶▸◂➜➤]+/))
+    .map((l) => l.replace(/(^|\s)[v^](?=\s|$)/g, "$1 "))
+    .flatMap((l) => l.split(/[│┃║|─━═┌┍┐┑└┕┘┙├┝┤┥┬┯┴┷┼╋▼▾↓↑←→◀▶▸◂➜➤]+|-+>|<-+/))
     .filter((s) => /[\p{L}\p{N}]/u.test(s)).length;
   if (textSegs < 3) return false;
 
-  // 一眼像代码就放过：分号结尾、花括号、常见关键字密集出现
-  const codey = lines.filter((l) => /[;{}]\s*$/.test(l) || /\b(function|const|let|var|class|import|def|return|if|for|while)\b/.test(l)).length;
+  // 一眼像代码就放过：分号结尾、花括号、常见关键字、箭头函数 / 方法调用（x => y、p->f()）、
+  // 命令提示符密集出现。ASCII 箭头放进来之后，C 的 p->next、shell 的 > 重定向都得靠这里挡
+  const codey = lines.filter(
+    (l) =>
+      /[;{}]\s*$/.test(l) ||
+      /\b(function|const|let|var|class|import|def|return|if|for|while|fn|func)\b/.test(l) ||
+      /=>|\w->\w+\(|^\s*[$#>]\s/.test(l),
+  ).length;
   if (codey > lines.length / 3) return false;
 
   return true;
