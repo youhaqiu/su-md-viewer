@@ -31,6 +31,50 @@ const DIAG = new Set([..."/\\"]);
 const ANY_ARROW = new Set([...A_R, ...A_L, ...A_U, ...A_D]);
 const LINEISH = new Set([...H, ...V, ...JUNC, ...TL, ...TR, ...BL, ...BR, ...ANY_ARROW, ...DIAG]);
 
+// 左右紧挨着的字符是不是文字（字母 / 数字 / 汉字）；左边是宽字符时跳过它的 FILL 占位
+const WORDY = /[\p{L}\p{N}]/u;
+function wordyLeft(g: Grid, r: number, c: number): boolean {
+  const ch = g.at(r, c - 1);
+  return WORDY.test(ch === FILL ? g.at(r, c - 2) : ch);
+}
+const wordyRight = (g: Grid, r: number, c: number) => WORDY.test(g.at(r, c + 1));
+
+// 也能当普通文字用的 ASCII 线条字符：字母 v，和 - / \ < > ^ | 这类标点
+const ASCII_AMBIG = new Set([..."v-/\\<>^|"]);
+
+// 有些线条字符有歧义，得看上下文：
+// - 「+」可能是交叉/拐角，也可能是加号（如「返回类型 + confidence」）。只有四邻格里也有
+//   线条字符时才当线条，被空格夹着的孤立 + 留在文本里。
+// - 字母 v 只要贴着别的文字就是单词的一部分（receive、validate）。
+// - - / \ < > ^ | 两边都贴着文字时是词内标点（server-side、and/or）；一边贴着文字的
+//   仍算线条，这样 A->B 这种不留空格的写法照样能连上。
+// - / \ 另外还要求周围 8 格里有别的线条字符，否则是文字里的分隔符。
+function isLineCharAt(g: Grid, r: number, c: number): boolean {
+  const ch = g.at(r, c);
+  if (!LINEISH.has(ch)) return false;
+  if (ASCII_AMBIG.has(ch)) {
+    const l = wordyLeft(g, r, c);
+    const rt = wordyRight(g, r, c);
+    if (ch === "v") return !l && !rt;
+    if (l && rt) return false;
+    // 斜线得真的连着别的线；「input / auth」里孤零零的 / 是分隔符
+    if (DIAG.has(ch)) {
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++)
+          if ((dr || dc) && LINEISH.has(g.at(r + dr, c + dc))) return true;
+      return false;
+    }
+    return true;
+  }
+  if (ch !== "+") return true;
+  return (
+    LINEISH.has(g.at(r - 1, c)) ||
+    LINEISH.has(g.at(r + 1, c)) ||
+    LINEISH.has(g.at(r, c - 1)) ||
+    LINEISH.has(g.at(r, c + 1))
+  );
+}
+
 // 方框侧边可以是竖线，也可以是 ├ ┤ 这类丁字接口（框上挂着连线时会出现）
 const canV = (ch: string) => V.has(ch) || JUNC.has(ch) || A_U.has(ch) || A_D.has(ch);
 
@@ -170,23 +214,57 @@ type Attach = { box: Box; dir: [number, number]; tip: Cell; incoming: boolean };
 // 线头允许跟方框之间隔几个空格（`|  A  | ---> |  B  |` 这种写法很常见）
 const GAP_TOLERANCE = 4;
 
-export function parseAscii(src: string, theme: DiagramTheme): DiagramGraph | null {
-  const g = new Grid(src);
-  if (g.h < 2) return null;
-  const boxes = findBoxes(g);
-  if (!boxes.length) return null; // 没框：交给「文本原样」那条回落路径
+type TextRun = { r: number; c1: number; c2: number; s: string };
+type Pending = { from: Attach; to: Attach; arrow: DiagramEdge["arrow"]; cells: Cell[] };
 
-  const owner = new Map<string, Box>(); // 单元格 -> 所属方框（含边框与内部）
-  const key = (r: number, c: number) => `${r},${c}`;
-  for (const b of boxes) {
-    for (let r = b.r1; r <= b.r2; r++) {
-      for (let c = b.c1; c <= b.c2; c++) owner.set(key(r, c), b);
+// 每行的连续文字聚成 run：跳过被占用的格子（有框模式：方框与连线格；无框模式：全放行），
+// 也跳过线条字符——于是行内的 → 会把左右两段文字切成两个 run，正好成为一条边的两端。
+function scanTextRuns(g: Grid, isTaken: (r: number, c: number) => boolean): TextRun[] {
+  const texts: TextRun[] = [];
+  for (let r = 0; r < g.h; r++) {
+    let c = 0;
+    while (c < g.w) {
+      const ch = g.at(r, c);
+      const usable = ch !== " " && ch !== FILL && !isTaken(r, c) && !isLineCharAt(g, r, c);
+      if (!usable) {
+        c++;
+        continue;
+      }
+      let end = c;
+      let buf = "";
+      let gap = 0;
+      for (let x = c; x < g.w; x++) {
+        const cc = g.at(r, x);
+        const free = !isTaken(r, x) && !isLineCharAt(g, r, x);
+        if (!free) break;
+        if (cc === FILL) {
+          end = x; // 宽字符的后半格：算进跨度，但本身没有可读内容
+          gap = 0;
+        } else if (cc === " ") {
+          gap++;
+          if (gap > 1) break;
+          buf += cc;
+        } else {
+          gap = 0;
+          buf += cc;
+          end = x;
+        }
+      }
+      texts.push({ r, c1: c, c2: end, s: buf.trimEnd() });
+      c = end + 1;
     }
   }
+  return texts;
+}
 
-  // 线段格：不属于任何方框、且是线条字符
+// 连线机制：把线段字符连成连通分量，分量端点探向方框/文本节点即成边。
+// owner 是「格子 → 节点包围盒」；有框模式来自 findBoxes，无框模式来自文本 run。
+function makeWiring(g: Grid, owner: Map<string, Box>) {
+  const key = (r: number, c: number) => `${r},${c}`;
+
+  // 线段格：不属于任何节点、且是线条字符
   const isLine = (r: number, c: number) =>
-    !owner.has(key(r, c)) && LINEISH.has(g.at(r, c)) && g.at(r, c) !== " ";
+    !owner.has(key(r, c)) && isLineCharAt(g, r, c) && g.at(r, c) !== " ";
 
   // 邻接：本格朝那个方向能走，且邻格朝回来的方向也能走；斜杠额外走对角
   const neighbors = (r: number, c: number): Cell[] => {
@@ -236,7 +314,7 @@ export function parseAscii(src: string, theme: DiagramTheme): DiagramGraph | nul
     }
   }
 
-  // 分量的哪些线头指向方框：从没有后继的一头朝外走，允许跨过几个空格
+  // 分量的哪些线头指向节点：从没有后继的一头朝外走，允许跨过几个空格
   const PROBE: Array<{ d: [number, number]; arrow: Set<string> }> = [
     { d: [0, -1], arrow: A_L },
     { d: [0, 1], arrow: A_R },
@@ -301,11 +379,16 @@ export function parseAscii(src: string, theme: DiagramTheme): DiagramGraph | nul
     return out.reverse();
   };
 
-  const graph = emptyGraph("ascii");
-  // 折线要等字宽定下来才能算像素坐标，先把「两端 + 途经格子」记着
-  type Pending = { from: Attach; to: Attach; arrow: DiagramEdge["arrow"]; cells: Cell[] };
-  const pending: Pending[] = [];
+  return { components, attachmentsOf, pathBetween };
+}
 
+// 把连通分量两端的吸附关系配成边（两种模式共用同一套配对规则）
+function pairComponents(
+  components: Cell[][],
+  attachmentsOf: (comp: Cell[]) => Attach[],
+  pathBetween: (comp: Cell[], a: Cell, b: Cell) => Cell[],
+): Pending[] {
+  const pending: Pending[] = [];
   for (const comp of components) {
     const att = attachmentsOf(comp);
     if (att.length < 2) continue;
@@ -334,49 +417,203 @@ export function parseAscii(src: string, theme: DiagramTheme): DiagramGraph | nul
       pending.push({ from, to, arrow, cells: pathBetween(comp, from.tip, to.tip) });
     }
   }
+  return pending;
+}
+
+// pending → IR 边：端点吸附到节点外边界，折线抹掉共线的中间点
+function edgesFromPending(
+  pending: Pending[],
+  px: (c: number) => number,
+  py: (r: number) => number,
+  cellW: number,
+  cellH: number,
+): DiagramEdge[] {
+  // 线头所在格的中心线 × 节点朝向那一侧的边
+  const boundary = (a: Attach) => {
+    const [dr, dc] = a.dir;
+    const cx = px(a.tip.c) + cellW / 2;
+    const cy = py(a.tip.r) + cellH / 2;
+    if (dr === 1) return { x: cx, y: py(a.box.r1) };
+    if (dr === -1) return { x: cx, y: py(a.box.r2 + 1) };
+    if (dc === 1) return { x: px(a.box.c1), y: cy };
+    return { x: px(a.box.c2 + 1), y: cy };
+  };
+
+  return pending.map((p, i) => {
+    const pts = [
+      boundary(p.from),
+      ...p.cells.map((c) => ({ x: px(c.c) + cellW / 2, y: py(c.r) + cellH / 2 })),
+      boundary(p.to),
+    ];
+    const simp: typeof pts = [];
+    for (const pt of pts) {
+      const n = simp.length;
+      if (n >= 2) {
+        const a = simp[n - 2];
+        const b = simp[n - 1];
+        const dx1 = b.x - a.x;
+        const dy1 = b.y - a.y;
+        const dx2 = pt.x - b.x;
+        const dy2 = pt.y - b.y;
+        if (Math.abs(dx1 * dy2 - dx2 * dy1) < 0.01) {
+          simp[n - 1] = pt;
+          continue;
+        }
+      }
+      simp.push(pt);
+    }
+    return {
+      id: `e${i}`,
+      from: p.from.box.id,
+      to: p.to.box.id,
+      arrow: p.arrow,
+      points: simp,
+    };
+  });
+}
+
+// 行内注释：主流程旁边的「命中 → 返回确定类型」是在给分支加说明，不是另一张图。
+// 按边把节点并成连通组，节点最多的那组是主图；其余组若整组的边都落在同一行，
+// 就把这些边丢掉，两端文字回落成普通标签。
+function dropSideNotes(pending: Pending[]): Pending[] {
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let p = parent.get(x) ?? x;
+    if (p !== x) {
+      p = find(p);
+      parent.set(x, p);
+    }
+    return p;
+  };
+  for (const p of pending) parent.set(find(p.from.box.id), find(p.to.box.id));
+
+  const groups = new Map<string, { nodes: Set<string>; edges: Pending[] }>();
+  for (const p of pending) {
+    const root = find(p.from.box.id);
+    const grp = groups.get(root) ?? { nodes: new Set<string>(), edges: [] };
+    grp.nodes.add(p.from.box.id).add(p.to.box.id);
+    grp.edges.push(p);
+    groups.set(root, grp);
+  }
+  if (groups.size < 2) return pending;
+
+  const all = [...groups.values()];
+  const main = all.reduce((a, b) => (b.nodes.size > a.nodes.size ? b : a));
+  const drop = new Set<Pending>();
+  for (const grp of all) {
+    if (grp === main) continue;
+    const row = grp.edges[0].from.box.r1;
+    if (grp.edges.every((p) => p.from.box.r1 === row && p.to.box.r1 === row)) {
+      for (const p of grp.edges) drop.add(p);
+    }
+  }
+  return pending.filter((p) => !drop.has(p));
+}
+
+// ===== 无框流程图：纯文字节点 + │ ▼ └── → 连线 =====
+// 文本 run 直接当节点（角色相当于有框模式里的方框），连线机制完全复用。
+// 被边连到的节点画成方框（矢量化后就是正经流程图），没连到的散落文字保持原样。
+function parseBareFlow(g: Grid, theme: DiagramTheme): DiagramGraph | null {
+  if (g.h < 3) return null;
+  const runs = scanTextRuns(g, () => false);
+  if (runs.length < 3) return null;
+
+  const key = (r: number, c: number) => `${r},${c}`;
+  const boxes: Box[] = runs.map((t, i) => ({ r1: t.r, c1: t.c1, r2: t.r, c2: t.c2, id: `n${i}` }));
+  const owner = new Map<string, Box>();
+  for (const b of boxes) {
+    for (let c = b.c1; c <= b.c2; c++) owner.set(key(b.r1, c), b);
+  }
+
+  const { components, attachmentsOf, pathBetween } = makeWiring(g, owner);
+  const pending = dropSideNotes(pairComponents(components, attachmentsOf, pathBetween));
+
+  // 误伤门槛：节点 ≥3、边 ≥2、带箭头的边 ≥1（tree 输出之类没有箭头，在这里被挡下）
+  const attached = new Set<string>();
+  let arrowed = 0;
+  for (const p of pending) {
+    attached.add(p.from.box.id);
+    attached.add(p.to.box.id);
+    if (p.arrow !== "none") arrowed++;
+  }
+  if (attached.size < 3 || pending.length < 2 || arrowed < 1) return null;
+
+  // 没连上边的文字按原文回落成标签：同一行相邻的两段之间若只隔着没被任何边用到的
+  // 线条字符（比如注释「命中 → 返回确定类型」里的 →），就并成一段，箭头跟着原文保留
+  const used = new Set(pending.flatMap((p) => p.cells.map((c) => key(c.r, c.c))));
+  type Item = TextRun & { id: string; isNode: boolean };
+  const items: Item[] = [];
+  runs.forEach((t, i) => {
+    const isNode = attached.has(boxes[i].id);
+    const prev = items[items.length - 1];
+    if (!isNode && prev && !prev.isNode && prev.r === t.r) {
+      let free = true;
+      for (let c = prev.c2 + 1; c < t.c1; c++) if (used.has(key(t.r, c))) free = false;
+      if (free) {
+        prev.c2 = t.c2;
+        prev.s = g.slice(t.r, prev.c1, t.c2 + 1).trimEnd();
+        return;
+      }
+    }
+    items.push({ ...t, id: boxes[i].id, isNode });
+  });
+
+  // 网格 → 像素：字宽按最挤的文本节点反推（逻辑同有框模式）
+  let cellW = 8.6;
+  const cellH = 22;
+  const font = nodeFont(theme);
+  for (const t of items) {
+    const need = measureText(t.s, font) + 20;
+    const have = (t.c2 - t.c1 + 1) * cellW;
+    if (need > have) cellW = Math.min(cellW * (need / have), 18);
+  }
+
+  const PAD = 14;
+  const px = (c: number) => c * cellW + PAD;
+  const py = (r: number) => r * cellH + PAD;
+
+  const graph = emptyGraph("ascii");
+  for (const t of items) {
+    graph.nodes.push({
+      id: t.id,
+      text: t.s,
+      lines: [t.s],
+      shape: t.isNode ? "rect" : "text",
+      x: px(t.c1),
+      y: t.isNode ? py(t.r) : py(t.r) + 2,
+      w: (t.c2 - t.c1 + 1) * cellW,
+      h: t.isNode ? cellH : cellH - 4,
+    });
+  }
+  graph.edges.push(...edgesFromPending(pending, px, py, cellW, cellH));
+
+  graph.laidOut = true;
+  graph.width = g.w * cellW + PAD * 2;
+  graph.height = g.h * cellH + PAD * 2;
+  return graph;
+}
+
+export function parseAscii(src: string, theme: DiagramTheme): DiagramGraph | null {
+  const g = new Grid(src);
+  if (g.h < 2) return null;
+  const boxes = findBoxes(g);
+  if (!boxes.length) return parseBareFlow(g, theme); // 没框：试试纯文字流程图
+
+  const owner = new Map<string, Box>(); // 单元格 -> 所属方框（含边框与内部）
+  const key = (r: number, c: number) => `${r},${c}`;
+  for (const b of boxes) {
+    for (let r = b.r1; r <= b.r2; r++) {
+      for (let c = b.c1; c <= b.c2; c++) owner.set(key(r, c), b);
+    }
+  }
+
+  const { components, attachmentsOf, pathBetween } = makeWiring(g, owner);
+  const pending = pairComponents(components, attachmentsOf, pathBetween);
 
   // ===== 框外散落文字：当作无边框文本节点，保住原图里的注释 / 分支标签 =====
   const consumedText = new Set<string>();
   for (const comp of components) for (const cell of comp) consumedText.add(key(cell.r, cell.c));
-  const texts: Array<{ r: number; c1: number; c2: number; s: string }> = [];
-  for (let r = 0; r < g.h; r++) {
-    let c = 0;
-    while (c < g.w) {
-      const ch = g.at(r, c);
-      const usable =
-        ch !== " " &&
-        ch !== FILL &&
-        !owner.has(key(r, c)) &&
-        !consumedText.has(key(r, c)) &&
-        !LINEISH.has(ch);
-      if (!usable) {
-        c++;
-        continue;
-      }
-      let end = c;
-      let buf = "";
-      let gap = 0;
-      for (let x = c; x < g.w; x++) {
-        const cc = g.at(r, x);
-        const free = !owner.has(key(r, x)) && !consumedText.has(key(r, x)) && !LINEISH.has(cc);
-        if (!free) break;
-        if (cc === FILL) {
-          end = x; // 宽字符的后半格：算进跨度，但本身没有可读内容
-          gap = 0;
-        } else if (cc === " ") {
-          gap++;
-          if (gap > 1) break;
-          buf += cc;
-        } else {
-          gap = 0;
-          buf += cc;
-          end = x;
-        }
-      }
-      texts.push({ r, c1: c, c2: end, s: buf.trimEnd() });
-      c = end + 1;
-    }
-  }
+  const texts = scanTextRuns(g, (r, c) => owner.has(key(r, c)) || consumedText.has(key(r, c)));
 
   // ===== 网格 → 像素：字宽按最挤的那个方框反推，保证文字放得下又不破坏原有对齐 =====
   let cellW = 8.6;
@@ -405,6 +642,7 @@ export function parseAscii(src: string, theme: DiagramTheme): DiagramGraph | nul
   const px = (c: number) => c * cellW + PAD;
   const py = (r: number) => r * cellH + PAD;
 
+  const graph = emptyGraph("ascii");
   for (const b of boxes) {
     const text = boxTexts.get(b.id) ?? "";
     graph.nodes.push({
@@ -431,49 +669,7 @@ export function parseAscii(src: string, theme: DiagramTheme): DiagramGraph | nul
     });
   });
 
-  // 端点吸附到方框外边界上：线头所在格的中心线 × 方框朝向那一侧的边
-  const boundary = (a: Attach) => {
-    const [dr, dc] = a.dir;
-    const cx = px(a.tip.c) + cellW / 2;
-    const cy = py(a.tip.r) + cellH / 2;
-    if (dr === 1) return { x: cx, y: py(a.box.r1) };
-    if (dr === -1) return { x: cx, y: py(a.box.r2 + 1) };
-    if (dc === 1) return { x: px(a.box.c1), y: cy };
-    return { x: px(a.box.c2 + 1), y: cy };
-  };
-
-  pending.forEach((p, i) => {
-    // 单元格坐标 → 中心点像素，并抹掉共线的中间点
-    const pts = [
-      boundary(p.from),
-      ...p.cells.map((c) => ({ x: px(c.c) + cellW / 2, y: py(c.r) + cellH / 2 })),
-      boundary(p.to),
-    ];
-    const simp: typeof pts = [];
-    for (const pt of pts) {
-      const n = simp.length;
-      if (n >= 2) {
-        const a = simp[n - 2];
-        const b = simp[n - 1];
-        const dx1 = b.x - a.x;
-        const dy1 = b.y - a.y;
-        const dx2 = pt.x - b.x;
-        const dy2 = pt.y - b.y;
-        if (Math.abs(dx1 * dy2 - dx2 * dy1) < 0.01) {
-          simp[n - 1] = pt;
-          continue;
-        }
-      }
-      simp.push(pt);
-    }
-    graph.edges.push({
-      id: `e${i}`,
-      from: p.from.box.id,
-      to: p.to.box.id,
-      arrow: p.arrow,
-      points: simp,
-    });
-  });
+  graph.edges.push(...edgesFromPending(pending, px, py, cellW, cellH));
 
   graph.laidOut = true;
   graph.width = g.w * cellW + PAD * 2;

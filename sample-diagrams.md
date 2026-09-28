@@ -139,6 +139,31 @@ cond(no,right)->sub->op
                     +----------+
 ```
 
+无框流程图（纯文字节点 + 箭头连线，没画框也认）：
+
+```
+OCR 文本
+  │
+  ▼
+规则匹配器（优先）
+  │  命中 → 返回确定类型, 零 LLM 成本
+  │
+  └──未命中
+     ▼
+   LLM 分类器（兜底）
+     ▼
+   返回类型 + confidence
+```
+
+横向的无框图：
+
+```
+读取配置 → 解析参数 → 校验输入
+                        │
+                        ▼
+                     执行流程 → 输出结果
+```
+
 ## 四、不该被当成图的内容
 
 普通代码块照旧是代码块：
@@ -148,6 +173,17 @@ function render(markdown) {
   const html = marked.parse(markdown);
   return sanitize(html);
 }
+```
+
+tree 命令的输出（有 ├── │ └── 但没有箭头，不是流程图）：
+
+```
+src
+├── main.ts
+├── editor.ts
+└── diagram
+    ├── parse-ascii.ts
+    └── render.ts
 ```
 
 没识别出结构的字符画，保留原样排版（普通代码块）：
