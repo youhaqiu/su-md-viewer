@@ -75,6 +75,9 @@ const messages: Record<Locale, Dict> = {
     "update.prompt": "发现新版本 {version}，现在更新吗？",
     "update.ok": "更新并重启",
     "update.cancel": "稍后",
+    "update.checkTitle": "检查更新",
+    "update.latest": "当前已是最新版本（{version}）。",
+    "update.failed": "检查更新失败，请检查网络后重试。",
   },
   en: {
     "app.tagline": "A clean Markdown reader",
@@ -142,6 +145,9 @@ const messages: Record<Locale, Dict> = {
     "update.prompt": "Version {version} is available. Update now?",
     "update.ok": "Update & restart",
     "update.cancel": "Later",
+    "update.checkTitle": "Check for Updates",
+    "update.latest": "You're up to date (version {version}).",
+    "update.failed": "Couldn't check for updates. Please check your connection and try again.",
   },
 };
 

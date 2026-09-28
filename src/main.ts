@@ -5,6 +5,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from "marked";
 import { markedHighlight } from "marked-highlight";
@@ -1736,12 +1737,20 @@ invoke<string | null>("get_initial_file").then((path) => {
   if (path) openPath(path);
 });
 
-// ===== 自动更新：仅主窗口启动时静默检查一次，发现新版征询后下载安装并重启 =====
-async function checkForUpdate() {
-  if (getCurrentWindow().label !== "main") return; // 避免每个文档窗口都查一遍
+// ===== 更新：主窗口启动时静默查一次；菜单「检查更新…」手动查，结果都要给个交代 =====
+async function checkForUpdate(manual = false) {
+  if (!manual && getCurrentWindow().label !== "main") return; // 避免每个文档窗口都查一遍
   try {
     const update = await check();
-    if (!update) return; // 已是最新
+    if (!update) {
+      if (manual) {
+        await message(i18n("update.latest", { version: await getVersion() }), {
+          title: i18n("update.checkTitle"),
+          kind: "info",
+        });
+      }
+      return;
+    }
     const yes = await ask(
       `${i18n("update.prompt", { version: update.version })}${update.body ? `\n\n${update.body}` : ""}`,
       {
@@ -1755,11 +1764,18 @@ async function checkForUpdate() {
     await update.downloadAndInstall();
     await relaunch();
   } catch (err) {
-    // 无网络 / 尚无发布 / 开发环境无更新端点等都会落到这里，静默忽略即可
+    // 无网络 / 尚无发布 / 开发环境无更新端点等都会落到这里：自动检查静默忽略，手动检查如实告知
     console.warn("更新检查失败：", err);
+    if (manual) {
+      await message(`${i18n("update.failed")}\n\n${String(err)}`, {
+        title: i18n("update.checkTitle"),
+        kind: "warning",
+      });
+    }
   }
 }
 checkForUpdate();
+listen("menu-check-update", () => checkForUpdate(true));
 
 // 拖拽文件到窗口
 getCurrentWebview().onDragDropEvent((event) => {

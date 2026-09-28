@@ -171,13 +171,18 @@ fn build_app_menu<R: tauri::Runtime>(
     } else {
         ("View", "Language")
     };
+    let check_update_l = if zh { "检查更新…" } else { "Check for Updates…" };
 
     let open_item = MenuItemBuilder::with_id("open", open_l)
         .accelerator("CmdOrCtrl+O")
         .build(app)?;
 
+    // 原生「关于」面板加不了按钮，手动检查更新按 macOS 惯例放在它正下方
+    let check_update_item = MenuItemBuilder::with_id("check-update", check_update_l).build(app)?;
+
     let app_menu = SubmenuBuilder::new(app, "73") // 品牌名不翻译
         .item(&P::about(app, Some(about_l), None)?)
+        .item(&check_update_item)
         .separator()
         .item(&P::services(app, Some(services_l))?)
         .separator()
@@ -341,6 +346,18 @@ pub fn run() {
                         .find(|w| w.is_focused().unwrap_or(false))
                     {
                         let _ = w.emit("menu-open", ());
+                    }
+                }
+                // 手动检查更新：交给聚焦的窗口去查并弹结果；都没聚焦（比如刚从关于面板回来）就找主窗口
+                "check-update" => {
+                    let windows = app.webview_windows();
+                    let target = windows
+                        .values()
+                        .find(|w| w.is_focused().unwrap_or(false))
+                        .or_else(|| windows.get("main"))
+                        .or_else(|| windows.values().next());
+                    if let Some(w) = target {
+                        let _ = w.emit("menu-check-update", ());
                     }
                 }
                 // 语言切换：广播给所有窗口，让整个应用（含各文档窗口）统一切换语言
