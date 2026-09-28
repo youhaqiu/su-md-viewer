@@ -6,7 +6,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Marked, type TokenizerAndRendererExtension } from "marked";
+import { Marked, type TokenizerAndRendererExtension, type Tokens } from "marked";
 import { markedHighlight } from "marked-highlight";
 import katex from "katex";
 import hljs from "highlight.js";
@@ -59,6 +59,9 @@ const KATEX_BLOCK_RE = /^(\${1,2})\n((?:\\[^]|[^\\])+?)\n\1(?:\n|$)/;
 function renderKatex(text: string, displayMode: boolean): string {
   return katex.renderToString(text, { throwOnError: false, displayMode });
 }
+// 四个公式扩展共用：行内按 token 自带的 displayMode，块级总是 display 并补换行
+const renderMathInline = (token: Tokens.Generic) => renderKatex(token.text ?? "", Boolean(token.displayMode));
+const renderMathBlock = (token: Tokens.Generic) => renderKatex(token.text ?? "", true) + "\n";
 
 const katexInline: TokenizerAndRendererExtension = {
   name: "katexInline",
@@ -77,9 +80,7 @@ const katexInline: TokenizerAndRendererExtension = {
       displayMode: m[1].length === 2,
     };
   },
-  renderer(token) {
-    return renderKatex(token.text ?? "", Boolean((token as { displayMode?: boolean }).displayMode));
-  },
+  renderer: renderMathInline,
 };
 
 const katexBlock: TokenizerAndRendererExtension = {
@@ -99,9 +100,7 @@ const katexBlock: TokenizerAndRendererExtension = {
       displayMode: m[1].length === 2,
     };
   },
-  renderer(token) {
-    return renderKatex(token.text ?? "", Boolean((token as { displayMode?: boolean }).displayMode)) + "\n";
-  },
+  renderer: renderMathBlock,
 };
 
 // ===== LaTeX 原生定界符：\( … \) 行内、\[ … \] 块级 =====
@@ -126,9 +125,7 @@ const latexInline: TokenizerAndRendererExtension = {
     if (/[぀-ヿ㐀-鿿가-힯]/.test(m[2]) && !m[2].includes("\\")) return undefined;
     return { type: "latexInline", raw: m[0], text: m[2].trim(), displayMode: m[1] === "[" };
   },
-  renderer(token) {
-    return renderKatex(token.text ?? "", Boolean((token as { displayMode?: boolean }).displayMode));
-  },
+  renderer: renderMathInline,
 };
 
 const latexBlock: TokenizerAndRendererExtension = {
@@ -143,9 +140,7 @@ const latexBlock: TokenizerAndRendererExtension = {
     if (!m || !m[1].trim()) return undefined;
     return { type: "latexBlock", raw: m[0], text: m[1].trim() };
   },
-  renderer(token) {
-    return renderKatex(token.text ?? "", true) + "\n";
-  },
+  renderer: renderMathBlock,
 };
 
 marked.use({ extensions: [katexBlock, latexBlock, katexInline, latexInline] });

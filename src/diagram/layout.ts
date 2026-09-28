@@ -29,7 +29,7 @@ export function labelFont(t: DiagramTheme): string {
 }
 
 // 按像素宽度折行：优先在空格处断，CJK 逐字断
-export function wrapText(text: string, font: string, maxWidth: number): string[] {
+function wrapText(text: string, font: string, maxWidth: number): string[] {
   const out: string[] = [];
   for (const para of text.split("\n")) {
     if (!para) {
@@ -58,7 +58,7 @@ export function wrapText(text: string, font: string, maxWidth: number): string[]
 }
 
 // 量出节点尺寸：文字盒 + 形状补偿（菱形 / 平行四边形要多留空间）
-export function sizeNode(node: DiagramNode, t: DiagramTheme) {
+function sizeNode(node: DiagramNode, t: DiagramTheme) {
   // 状态图的起止圆点没有文字，得保持小圆点大小，不能按最小节点尺寸撑开
   if (!node.text.trim() && node.shape === "ellipse") {
     node.lines = [];

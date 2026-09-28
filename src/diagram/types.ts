@@ -127,7 +127,3 @@ export function emptyGraph(kind: DiagramGraph["kind"]): DiagramGraph {
     laidOut: false,
   };
 }
-
-export function nodeById(g: DiagramGraph, id: string): DiagramNode | undefined {
-  return g.nodes.find((n) => n.id === id);
-}

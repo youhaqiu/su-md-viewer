@@ -264,7 +264,7 @@ function makeWiring(g: Grid, owner: Map<string, Box>) {
 
   // 线段格：不属于任何节点、且是线条字符
   const isLine = (r: number, c: number) =>
-    !owner.has(key(r, c)) && isLineCharAt(g, r, c) && g.at(r, c) !== " ";
+    !owner.has(key(r, c)) && isLineCharAt(g, r, c);
 
   // 邻接：本格朝那个方向能走，且邻格朝回来的方向也能走；斜杠额外走对角
   const neighbors = (r: number, c: number): Cell[] => {

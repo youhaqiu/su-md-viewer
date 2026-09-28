@@ -57,7 +57,7 @@ export function looksLikeAscii(code: string): boolean {
 // 判据刻意偏严：tree 输出、shell 会话里也有 │ └──，但没有箭头，在这里被挡掉。
 const U_ARROW = /[▼▾↓↑←→◀▶▸◂➜➤]/;
 const ASCII_ARROW = /-+>|<-+|(?:^|\s)[v^](?=\s|$)/;
-export function looksLikeBareFlow(code: string): boolean {
+function looksLikeBareFlow(code: string): boolean {
   const lines = code
     .replace(/\r\n?/g, "\n")
     .split("\n")

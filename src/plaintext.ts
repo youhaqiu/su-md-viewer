@@ -36,7 +36,7 @@ function gapColumns(line: string): number[] {
 // 多行在同一列上都留着缝 → 这是排版对齐过的，不是普通段落。
 // 要求过半的行（且至少两行）在同一列（±1）对齐：英文里句末双空格偶尔也会撞上一次，
 // 但要连着好几行撞在同一列，基本不可能。
-export function looksAligned(lines: string[]): boolean {
+function looksAligned(lines: string[]): boolean {
   if (lines.length < 2) return false;
   const cols = lines.map(gapColumns);
   const need = Math.max(2, Math.ceil(lines.length / 2));

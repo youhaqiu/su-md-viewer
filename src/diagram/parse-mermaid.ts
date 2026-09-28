@@ -129,7 +129,7 @@ const FLOW_BAILOUT = /^(subgraph|end\b)/i;
 // 这些是纯样式，忽略即可
 const FLOW_IGNORE = /^(classDef|class|style|linkStyle|click|accTitle|accDescr)\b/i;
 
-export function parseMermaidFlowchart(src: string): DiagramGraph | null {
+function parseMermaidFlowchart(src: string): DiagramGraph | null {
   const lines = cleanLines(src);
   if (!lines.length) return null;
 
@@ -211,7 +211,7 @@ export function parseMermaidFlowchart(src: string): DiagramGraph | null {
 // 组合状态 / 分叉 / 并发 / 注解暂不支持，交回官方库
 const STATE_BAILOUT = /(\{\s*$)|(<<\s*(fork|join|choice)\s*>>)|^note\b|^\s*--\s*$/i;
 
-export function parseMermaidState(src: string): DiagramGraph | null {
+function parseMermaidState(src: string): DiagramGraph | null {
   const lines = cleanLines(src);
   if (!lines.length) return null;
   if (!/^stateDiagram(-v2)?\b/i.test(lines[0])) return null;

@@ -39,7 +39,7 @@ function mix(color: string, target: string, k: number): string {
   return `rgb(${v[0]}, ${v[1]}, ${v[2]})`;
 }
 
-export function isDark(): boolean {
+function isDark(): boolean {
   return document.documentElement.getAttribute("data-theme") === "dark";
 }
 
@@ -64,7 +64,7 @@ export function setStyle(s: DiagramStyle) {
 
 // 霓虹 / 电路自带深色底（见 styles.css 里按 data-style 铺的卡片底），
 // 于是这两种风格的配色不跟随应用的深浅色，始终按深底来配。
-export function isDarkStyle(s: DiagramStyle): boolean {
+function isDarkStyle(s: DiagramStyle): boolean {
   return s === "neon" || s === "circuit";
 }
 
@@ -75,7 +75,7 @@ const CIRCUIT_BG = "#0a0f0d"; // 电路的底：偏绿的黑
 // 单独一个事件（不复用 STYLE_EVENT）是因为换色不影响字体字号，
 // 不必重新解析排版，用户拖过的节点位置能留住。
 export const COLORFUL_EVENT = "md-viewer-diagram-colorful";
-export const COLORFUL_KEY = "diagram-colorful";
+const COLORFUL_KEY = "diagram-colorful";
 
 export function isColorful(): boolean {
   return localStorage.getItem(COLORFUL_KEY) === "1";

@@ -48,7 +48,3 @@ window.addEventListener(STYLE_EVENT, () => refreshDiagrams(true));
 // 彩色开关只改颜色，不动字体字号，于是不必重新解析排版——
 // 用 full=false 重画，用户拖过的节点位置留得住
 window.addEventListener(COLORFUL_EVENT, () => refreshDiagrams(false));
-
-export function hasDiagrams(): boolean {
-  return cards.length > 0;
-}
