@@ -975,6 +975,117 @@ html[data-font="serif"] {
   background-color: #ccddec;
 }
 
+/* 论文式算法框：上下粗线 + 标题 + 输入/输出，行号一栏淡化，▷ 注释靠右 */
+.markdown-body .algo-block {
+  position: relative;
+  margin: 1.2em 0 1.4em;
+  padding: 0;
+  border-top: 2px solid var(--text);
+  border-bottom: 2px solid var(--text);
+  font-size: 0.94em;
+  line-height: 1.75;
+}
+.markdown-body .algo-block figcaption {
+  padding: 0.35em 0;
+  border-bottom: 1px solid var(--text);
+  font-weight: 600;
+}
+.markdown-body .algo-head {
+  padding: 0.35em 0;
+  border-bottom: 1px solid var(--border);
+}
+.markdown-body .algo-head b {
+  font-weight: 600;
+  margin-right: 0.2em;
+}
+.markdown-body .algo-body {
+  padding: 0.35em 0 0.45em;
+}
+.markdown-body .algo-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 0 0.3em;
+  border-radius: 4px;
+}
+.markdown-body .algo-line:hover {
+  background: var(--soft-bg);
+}
+.markdown-body .algo-no {
+  flex: 0 0 1.8em;
+  text-align: right;
+  color: var(--faint-text);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.markdown-body .algo-code {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.markdown-body .algo-code b {
+  font-weight: 600;
+}
+.markdown-body .algo-note {
+  flex: 0 1 auto;
+  margin-left: auto;
+  padding-left: 1em;
+  color: var(--muted-text);
+  font-size: 0.92em;
+  text-align: right;
+}
+.markdown-body .algo-block .copy-btn {
+  top: 5px;
+  right: 0;
+}
+.markdown-body .algo-block:hover .copy-btn {
+  opacity: 1;
+}
+
+/* 文献引用 [35]：主题色、无下划线，和正文区分开又不抢眼；条目编号收成淡色小标签 */
+.markdown-body .cite {
+  color: var(--accent);
+  white-space: nowrap;
+}
+.markdown-body a.cite-ref {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 0.2em;
+  padding: 0 0.08em;
+}
+.markdown-body a.cite-ref:hover {
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+.markdown-body a.cite-ref.cite-missing {
+  cursor: default;
+  opacity: 0.7;
+}
+.markdown-body a.cite-ref.cite-missing:hover {
+  background: none;
+}
+.markdown-body .cite-def {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  scroll-margin-top: 40px;
+}
+.markdown-body.cite-can-return .cite-def {
+  cursor: pointer; /* 刚从引用跳过来：点编号可以跳回去 */
+}
+.markdown-body .cite-flash {
+  animation: cite-flash 1.6s ease-out;
+  border-radius: 0.2em;
+}
+@keyframes cite-flash {
+  0%,
+  30% {
+    background: var(--accent-select);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 /* 选中文字时浮出的荧光笔调色板 */
 .hl-popover {
   position: fixed;

@@ -175,6 +175,54 @@ const highlightExtension: TokenizerAndRendererExtension = {
 };
 marked.use({ extensions: [highlightExtension] });
 
+// 中文加粗：CommonMark 规定「前面是标点、后面紧跟文字」的 ** 不能闭合，于是
+// **补充检验：……写定）。**针对表 8–7 整段原样漏出星号。中文句末标点后本来就不留空格，
+// 这条规则在中文里几乎总会误伤。这里放宽：** 紧贴非空白内容、中间不再有 ** 即成对；
+// 行内代码整段跳过，`a**b` 里的星号不算数。
+// ***粗斜体*** 与 a ** b 这类仍交给 marked 自带规则。
+const strongExtension: TokenizerAndRendererExtension = {
+  name: "cjkStrong",
+  level: "inline",
+  start(src) {
+    const i = src.indexOf("**");
+    return i < 0 ? undefined : i;
+  },
+  tokenizer(src) {
+    const m = /^\*\*(?!\*)(?=\S)((?:\\[^]|`[^`\n]*`|[^\\*`\n]|\*(?!\*)|\n(?!\s*\n))+?)(?<=\S)\*\*(?!\*)/.exec(src);
+    if (!m) return undefined;
+    return { type: "cjkStrong", raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+  },
+  renderer(token) {
+    return `<strong>${this.parser.parseInline(token.tokens ?? [])}</strong>`;
+  },
+};
+marked.use({ extensions: [strongExtension] });
+
+// 文献引用：[35]、[33,34]、[29–31] 渲染成可点的引用标记，每个数字各自指向 #ref-N。
+// 条目那一头（参考文献里行首的 [N]）在渲染后由 enhanceCitations() 认出来并挂上锚点。
+// 不碰 Markdown 自己的链接：后面紧跟 ( [ : 的是行内链接 / 引用式链接，
+// 以及文中定义过 [1]: url 的简写引用链接。
+const CITE_RE = /^\[(\d{1,4}(?:\s*[,，、–—~-]\s*\d{1,4})*)\](?![([:])/;
+const citationExtension: TokenizerAndRendererExtension = {
+  name: "citation",
+  level: "inline",
+  start(src) {
+    const m = /\[\d/.exec(src);
+    return m ? m.index : undefined;
+  },
+  tokenizer(src) {
+    const m = CITE_RE.exec(src);
+    if (!m) return undefined;
+    if (this.lexer.tokens.links?.[m[1].toLowerCase()]) return undefined;
+    return { type: "citation", raw: m[0], text: m[1] };
+  },
+  renderer(token) {
+    const inner = (token.text ?? "").replace(/\d+/g, (n: string) => `<a class="cite-ref" href="#ref-${n}">${n}</a>`);
+    return `<span class="cite">[${inner}]</span>`;
+  },
+};
+marked.use({ extensions: [citationExtension] });
+
 // ===== 界面元素引用 =====
 // 放在最前面：下面各处 applyXxx() 在模块初始化阶段就会跑一遍，那时若引用还没初始化会踩 TDZ。
 const titleEl = document.querySelector<HTMLSpanElement>("#title")!;
@@ -965,6 +1013,8 @@ async function render(markdown: string, path: string) {
   updateTitle();
   const dir = path.slice(0, path.lastIndexOf("/"));
   resolveImages(dir);
+  enhanceCitations();
+  setCiteReturn(null);
   enhanceDiagrams(previewEl); // 先把图表代码块换成卡片，剩下的才是真代码块
   enhanceCodeBlocks();
   enhanceTables();
@@ -972,6 +1022,93 @@ async function render(markdown: string, path: string) {
   updateDocStats(); // 阅读模式的字数按渲染后的可见正文统计
   buildSourceMap(prepared, skipLines, fm !== null); // 各增强步骤只做等量替换，块数已定
   previewEl.scrollTop = 0;
+}
+
+// ===== 文献引用：给参考文献条目挂锚点，正文里的 [N] 点了能跳过去 =====
+// 条目有两种写法：
+//   1. 行首的 [N]（段首，或 <br> 之后）——论文导出的 Markdown 最常见
+//   2. 「参考文献 / References」标题下的有序列表，第 i 项就是 [i]
+// 段首的 [N] 也可能是正文（「[3] 提出了…」），所以同一个号有多处候选时取最后一处
+// （参考文献总在文末），且至少得有两条候选才认为这是一份文献列表。
+function enhanceCitations() {
+  // a[0]、arr[1,2] 是下标不是引用：紧贴在英文标识符后面的还原成纯文字
+  // （中文正文里引用本就紧贴汉字——「查询[35]」——所以只看 ASCII 标识符字符）
+  const cites = Array.from(previewEl.querySelectorAll<HTMLElement>("span.cite")).filter((c) => {
+    const prev = c.previousSibling;
+    if (prev?.nodeType === Node.TEXT_NODE && /[A-Za-z0-9_]$/.test(prev.textContent ?? "")) {
+      c.replaceWith(c.textContent ?? "");
+      return false;
+    }
+    return true;
+  });
+  const targets = new Map<string, HTMLElement>(); // 号 → 条目元素（拿来取悬停文字、闪烁高亮）
+
+  const atLineStart = (el: HTMLElement) => {
+    let prev = el.previousSibling;
+    while (prev && prev.nodeType === Node.TEXT_NODE && !prev.textContent?.trim()) prev = prev.previousSibling;
+    if (prev) return prev.nodeName === "BR";
+    const block = el.parentElement;
+    return !!block && /^(P|LI|DIV|BLOCKQUOTE|TD)$/.test(block.tagName);
+  };
+  const defs = new Map<string, HTMLElement>();
+  for (const c of cites) {
+    const refs = c.querySelectorAll("a.cite-ref");
+    if (refs.length === 1 && c.textContent === `[${refs[0].textContent}]` && atLineStart(c)) {
+      defs.set(refs[0].textContent ?? "", c);
+    }
+  }
+  if (defs.size >= 2) {
+    for (const [n, c] of defs) {
+      c.classList.add("cite-def");
+      c.id = `ref-${n}`;
+      c.querySelector("a")?.replaceWith(n); // 条目自己的编号不再是跳转链接
+      targets.set(n, c);
+    }
+  }
+
+  // 有序列表形式的文献：找「参考文献 / References / Bibliography」标题后的第一个 <ol>
+  for (const h of previewEl.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")) {
+    if (!/^\s*(参考文献|引用文献|文献|references?|bibliography|works cited)\s*$/i.test(h.textContent ?? "")) continue;
+    let el = h.nextElementSibling;
+    while (el && el.tagName !== "OL" && !/^H[1-6]$/.test(el.tagName)) el = el.nextElementSibling;
+    if (el?.tagName !== "OL") continue;
+    const start = Number(el.getAttribute("start") ?? 1);
+    Array.from(el.children).forEach((li, i) => {
+      const n = String(start + i);
+      if (targets.has(n)) return;
+      li.id = `ref-${n}`;
+      targets.set(n, li as HTMLElement);
+    });
+  }
+
+  // 条目文字：<li> 取整项；段落里的 [N] 取到下一个 <br> 为止
+  const entryText = (t: HTMLElement) => {
+    if (t.tagName === "LI") return t.textContent ?? "";
+    let s = "";
+    for (let n = t.nextSibling; n && n.nodeName !== "BR"; n = n.nextSibling) s += n.textContent ?? "";
+    return s;
+  };
+  for (const a of previewEl.querySelectorAll<HTMLAnchorElement>("span.cite:not(.cite-def) a.cite-ref")) {
+    const t = targets.get(a.textContent ?? "");
+    if (t) a.title = `[${a.textContent}] ${entryText(t).trim().replace(/\s+/g, " ")}`;
+    else a.classList.add("cite-missing"); // 文中找不到对应条目：保留样式，但不可跳
+  }
+}
+
+// 引用跳转：记下从哪条引用跳过去，条目编号点一下就回到原处
+let citeReturn: HTMLElement | null = null;
+function setCiteReturn(el: HTMLElement | null) {
+  citeReturn = el;
+  previewEl.classList.toggle("cite-can-return", !!el); // 只有能跳回时，条目编号才显示成可点
+}
+
+function scrollPreviewTo(el: HTMLElement) {
+  const base = previewEl.getBoundingClientRect().top;
+  const y = previewEl.scrollTop + (el.getBoundingClientRect().top - base) - previewEl.clientHeight / 3;
+  previewEl.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+  el.classList.remove("cite-flash");
+  void el.offsetWidth; // 重新触发动画
+  el.classList.add("cite-flash");
 }
 
 // 把正文里指向本地文件的图片，按 md 所在目录解析并读成 data URL 内联进去
@@ -1017,6 +1154,101 @@ function codeLangOf(pre: HTMLPreElement): string {
   return "";
 }
 
+// ===== 伪代码 → 论文式算法框 =====
+// text / 无语言的代码块里，大半行以递增行号开头的，多半是论文里的算法：
+//
+//   分类型影响传播算法
+//   输入：……
+//    1  对每个起点 s ∈ S:
+//    2      状态[s] ← 起点状态(s)             ▷ 注释
+//
+// 等宽灰底框排中文既松又挤，这里改成算法浮动体的排法：上下粗线、标题、输入/输出，
+// 正文用正文字体，行号单独一栏，缩进换成层级留白，▷ 注释统一靠右。原文不变，复制照旧。
+const PLAIN_LANGS = new Set(["", "text", "txt", "plaintext", "plain", "pseudo", "pseudocode", "algorithm"]);
+const ALGO_LINE = /^(\s*)(\d{1,3})(\s+)(.*)$/;
+const ALGO_LABEL = /^(输入|输出|要求|前提|Input|Output|Require|Ensure|Data|Result)\s*[:：]/i;
+// 中文关键词后面直接跟汉字（对每个起点），英文的得是整词；「当」避开当前 / 当且 这类普通词
+const ALGO_KEYWORD =
+  /^(?:对每个|对于每个|否则若|否则如果|否则|若|如果|当(?![前且中时])|重复|直到|返回|跳过|继续|(?:for each|for all|for|else if|elif|else|if|while|repeat|until|return|continue|break|end)(?=[\s:：(（]|$))/i;
+
+function renderAlgorithm(src: string): HTMLElement | null {
+  const lines = src.replace(/\s+$/, "").split("\n");
+  const first = lines.findIndex((l) => ALGO_LINE.test(l));
+  if (first < 0) return null;
+  const rest = lines.slice(first).filter((l) => l.trim());
+  const numbered = rest.map((l) => ALGO_LINE.exec(l)).filter((m): m is RegExpExecArray => !!m);
+  if (numbered.length < 3 || numbered.length < rest.length * 0.6) return null;
+  // 行号得大致递增，免得把「2024  营收」这类数字开头的表格认进来
+  let rising = 0;
+  for (let i = 1; i < numbered.length; i++) if (+numbered[i][2] > +numbered[i - 1][2]) rising++;
+  if (rising < (numbered.length - 1) * 0.8) return null;
+
+  const fig = document.createElement("figure");
+  fig.className = "algo-block";
+  const head = lines.slice(0, first).filter((l) => l.trim());
+  if (head.length && !ALGO_LABEL.test(head[0].trim())) {
+    const cap = document.createElement("figcaption");
+    cap.textContent = head.shift()!.trim();
+    fig.appendChild(cap);
+  }
+  if (head.length) {
+    const box = document.createElement("div");
+    box.className = "algo-head";
+    for (const l of head) {
+      const row = document.createElement("div");
+      const m = ALGO_LABEL.exec(l.trim());
+      if (m) {
+        const b = document.createElement("b");
+        b.textContent = m[0];
+        row.append(b, l.trim().slice(m[0].length));
+      } else row.textContent = l.trim();
+      box.appendChild(row);
+    }
+    fig.appendChild(box);
+  }
+
+  // 缩进：行号后的空白减去最小值，就是这一行的层级留白
+  const gaps = numbered.map((m) => m[3].replace(/\t/g, "    ").length);
+  const base = Math.min(...gaps);
+  const body = document.createElement("div");
+  body.className = "algo-body";
+  for (const l of rest) {
+    const row = document.createElement("div");
+    row.className = "algo-line";
+    const m = ALGO_LINE.exec(l);
+    const no = document.createElement("span");
+    no.className = "algo-no";
+    const code = document.createElement("span");
+    code.className = "algo-code";
+    let text = l.trim();
+    if (m) {
+      no.textContent = m[2];
+      const indent = m[3].replace(/\t/g, "    ").length - base;
+      code.style.paddingLeft = `${(indent / 4) * 1.6}em`;
+      text = m[4];
+    }
+    // ▷ 注释拆出来靠右放；注释前那串对齐用的空格一并去掉
+    const ci = text.search(/[▷⊳▹]/);
+    const main = (ci >= 0 ? text.slice(0, ci) : text).trimEnd();
+    const kw = ALGO_KEYWORD.exec(main);
+    if (kw) {
+      const b = document.createElement("b");
+      b.textContent = kw[0];
+      code.append(b, main.slice(kw[0].length));
+    } else code.textContent = main;
+    row.append(no, code);
+    if (ci >= 0) {
+      const note = document.createElement("span");
+      note.className = "algo-note";
+      note.textContent = text.slice(ci).trim();
+      row.appendChild(note);
+    }
+    body.appendChild(row);
+  }
+  fig.appendChild(body);
+  return fig;
+}
+
 // 给每个代码块加「语言标 + 复制」。
 // 图表卡片里的 pre（源码视图 / 字符画回落）跳过——卡片自己那条工具条上已经有复制了。
 function enhanceCodeBlocks() {
@@ -1026,29 +1258,43 @@ function enhanceCodeBlocks() {
     )
     .forEach((pre) => {
       const lang = codeLangOf(pre);
-      if (lang) {
+      const plain = PLAIN_LANGS.has(lang.toLowerCase());
+      if (plain) {
+        const src = pre.querySelector("code")?.textContent ?? "";
+        const algo = renderAlgorithm(src);
+        if (algo) {
+          algo.appendChild(makeCopyBtn(() => src));
+          pre.replaceWith(algo); // 一换一，块数不变，源码行映射不受影响
+          return;
+        }
+      }
+      if (lang && !plain) {
+        // text / plaintext 这种标签不带信息，不挂
         const tag = document.createElement("span");
         tag.className = "code-lang";
         tag.textContent = lang;
         pre.appendChild(tag);
       }
-      const btn = document.createElement("button");
-      btn.className = "copy-btn";
-      btn.type = "button";
-      btn.title = i18n("code.copy");
-      btn.innerHTML = COPY_ICON;
-      btn.addEventListener("click", async () => {
-        const code = pre.querySelector("code")?.textContent ?? pre.textContent ?? "";
-        await navigator.clipboard.writeText(code);
-        btn.innerHTML = CHECK_ICON;
-        btn.classList.add("copied");
-        setTimeout(() => {
-          btn.innerHTML = COPY_ICON;
-          btn.classList.remove("copied");
-        }, 1200);
-      });
-      pre.appendChild(btn);
+      pre.appendChild(makeCopyBtn(() => pre.querySelector("code")?.textContent ?? pre.textContent ?? ""));
     });
+}
+
+function makeCopyBtn(getText: () => string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = "copy-btn";
+  btn.type = "button";
+  btn.title = i18n("code.copy");
+  btn.innerHTML = COPY_ICON;
+  btn.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(getText());
+    btn.innerHTML = CHECK_ICON;
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.innerHTML = COPY_ICON;
+      btn.classList.remove("copied");
+    }, 1200);
+  });
+  return btn;
 }
 
 // 折行切换图标
@@ -1430,13 +1676,32 @@ async function openPath(path: string) {
 }
 
 // 拦截正文里的链接点击：外链用系统浏览器打开，避免 webview 自己导航走、覆盖掉当前内容
+// 页内锚点（#ref-35、[见上文](#some-id)）在预览区内平滑滚过去
 previewEl.addEventListener("click", (e) => {
-  const anchor = (e.target as HTMLElement).closest("a");
+  const target = e.target as HTMLElement;
+  const def = target.closest<HTMLElement>(".cite-def");
+  if (def && citeReturn?.isConnected) {
+    scrollPreviewTo(citeReturn); // 点条目编号：回到刚才那条引用
+    setCiteReturn(null);
+    return;
+  }
+  const anchor = target.closest("a");
   if (!anchor) return;
   e.preventDefault();
   const href = anchor.getAttribute("href");
   if (href && /^https?:\/\//i.test(href)) {
     openUrl(href);
+  } else if (href?.startsWith("#") && href.length > 1) {
+    let id = href.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      /* 非法转义就按原样找 */
+    }
+    const dest = previewEl.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+    if (!dest) return;
+    if (anchor.classList.contains("cite-ref")) setCiteReturn(anchor.closest<HTMLElement>(".cite"));
+    scrollPreviewTo(dest);
   }
 });
 
